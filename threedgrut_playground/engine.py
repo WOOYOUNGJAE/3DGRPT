@@ -723,7 +723,7 @@ class Engine3DGRUT:
             device=self.device
         )
         self.primitives.add_primitive(
-            geometry_type='Sphere', primitive_type=OptixPrimitiveTypes.GLASS, device=self.device
+            geometry_type='Sphere', primitive_type=OptixPrimitiveTypes.DIFFUSE, device=self.device
         )
         self.rebuild_bvh(self.scene_mog)
         if self.envmap is not None:
