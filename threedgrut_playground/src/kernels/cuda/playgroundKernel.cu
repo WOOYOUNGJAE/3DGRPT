@@ -96,14 +96,23 @@ extern "C" __global__ void __raygen__rg() {
         {
             // The last render pass is treated like environment map light which reflects off PBR surfaces
             volumetricRadDns = traceGaussians(rayData, rayOri, rayDir, 1e-9, ray_t_max, &payload);
-            float3 radiance = make_float3(volumetricRadDns.x, volumetricRadDns.y, volumetricRadDns.z);
-            float alpha = volumetricRadDns.w;
 
-            float pbrTransmittance = clamp(cumulativePBRTransmittance, 0.0f, 1.0f);
-            float3 background = getBackgroundColor(rayDir);
-            payload.directLight = radiance * alpha + background * (1.0f - alpha) * pbrTransmittance;
-            payload.accumulatedAlpha = clamp(payload.accumulatedAlpha + alpha , 0.0f, 1.0f);
-            setNextTraceState(PGRNDTraceTerminate);
+            float3 L = make_float3(0,1,0);
+            // L = safe_normalize(L);
+            float3 ray_hitPos = rayOri + payload.rayData->hitDistance * rayDir;
+            float3 occlusion_ray_o = ray_hitPos + L * 0.1f/*TODO:Temp*/;
+            unsigned int is_occluded = traceOcclusion(occlusion_ray_o, L);
+
+            if (is_occluded == 0u)
+            {
+                float3 radiance = make_float3(volumetricRadDns.x, volumetricRadDns.y, volumetricRadDns.z);
+                float alpha = volumetricRadDns.w;
+
+                float pbrTransmittance = clamp(cumulativePBRTransmittance, 0.0f, 1.0f);
+                float3 background = getBackgroundColor(rayDir);
+                payload.directLight = radiance * alpha + background * (1.0f - alpha) * pbrTransmittance;
+                payload.accumulatedAlpha = clamp(payload.accumulatedAlpha + alpha , 0.0f, 1.0f);
+            }
         }
         else
         {
@@ -201,59 +210,57 @@ static __device__ __inline__ void handleGlass(const float3 ray_d, float3 normal,
 static __device__ __inline__ void handleDiffuse(const float3 ray_o, const float3 ray_d, float3 normal,
                                                  float& hit_t, unsigned int& nextRenderPass, HybridRayPayload* payload)
 {
-       // Accumulate all gaussian particles up to intersection with mesh surface first
-       const float4 volumetricRadDns = traceGaussians(*(payload->rayData), ray_o, ray_d, 1e-9, hit_t, payload);
-       const float3 volRadiance = make_float3(volumetricRadDns.x, volumetricRadDns.y, volumetricRadDns.z);
-       const float volAlpha = volumetricRadDns.w;
+    // Accumulate all gaussian particles up to intersection with mesh surface first
+    const float4 volumetricRadDns = traceGaussians(*(payload->rayData), ray_o, ray_d, 1e-9, hit_t, payload);
+    const float gaussianHit_t = payload->rayData->hitDistance;
+    unsigned int meshIsCloser = hit_t < gaussianHit_t;
+    if (payload->rayData->hitCount == 0.f)
+        meshIsCloser = true;
+    const float3 volRadiance = make_float3(volumetricRadDns.x, volumetricRadDns.y, volumetricRadDns.z);
+    const float volAlpha = volumetricRadDns.w;
+    
+    float3 L = make_float3(0,1,0);
+    // L = safe_normalize(L);
+    float3 ray_hitPos;
+    float3 occlusion_ray_o;
+    unsigned int is_occluded;
 
-       payload->accumulatedAlpha += volAlpha;
-       payload->accumulatedColor += volRadiance;
-       const float3 diffuse = get_diffuse_color(ray_d, normal);
-       const float surfaceAlpha = 1.0 - payload->accumulatedAlpha;
-       float lightPower = 1.f;
-   
-       float3 ray_hitPos = ray_o + hit_t * ray_d;
-       float3 L = make_float3(0,1,0);
-       // L = safe_normalize(L);
-       unsigned int is_occluded;
-       HybridRayPayload occlusionPayload;
-       packPointer(&occlusionPayload, is_occluded);
-       is_occluded = 1024;
-       float3 occlusion_ray_o = ray_hitPos + L * TRACE_MESH_TMIN;
-       optixTrace(
-           params.triHandle,
-           occlusion_ray_o,
-           L,
-           TRACE_MESH_TMIN,
-           TRACE_MESH_TMAX, 0.0f,                // rayTime
-           OptixVisibilityMask( 255 ),
-           OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT | OPTIX_RAY_FLAG_DISABLE_ANYHIT,
-           1,                         // SBT offset
-           1,                          // SBT stride
-           0,                          // missSBTIndex,
-           is_occluded
-           );
-       optixTrace(
-           params.handle,
-           occlusion_ray_o,
-           L,
-           TRACE_MESH_TMIN,
-           TRACE_MESH_TMAX, 0.0f,                // rayTime
-           OptixVisibilityMask( 255 ),
-           OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT | OPTIX_RAY_FLAG_DISABLE_ANYHIT,
-           1,                         // SBT offset
-           1,            // SBT stride
-           0,                          // missSBTIndex,
-           is_occluded
-           );
-   
-   
-       if (is_occluded == 1024)
-       {
-           payload->accumulatedColor += surfaceAlpha * diffuse * lightPower;
-           payload->accumulatedAlpha += surfaceAlpha;
-       }
-       nextRenderPass = PGRNDTraceTerminate;
+    if (meshIsCloser)
+    {
+        ray_hitPos = ray_o + hit_t * ray_d;
+        occlusion_ray_o = ray_hitPos + normal * TRACE_MESH_TMIN;
+    }
+    else // Gaussian is Closer
+    {
+        ray_hitPos = ray_o + gaussianHit_t * ray_d;
+        occlusion_ray_o = ray_hitPos + L * 0.1f;// * TRACE_MESH_TMIN;
+    }
+    is_occluded = traceOcclusion(occlusion_ray_o, L);
+    
+    
+    payload->accumulatedAlpha += volAlpha;
+    const float3 diffuse = get_diffuse_color(ray_d, normal);
+    const float surfaceAlpha = 1.0 - payload->accumulatedAlpha;   
+    if (meshIsCloser) 
+    {
+        payload->accumulatedColor += volRadiance;
+        if (is_occluded == 0u)
+        {
+            payload->accumulatedColor += surfaceAlpha * diffuse;
+            payload->accumulatedAlpha += surfaceAlpha;
+        }
+    }
+    else
+    {
+        if (is_occluded == 0u)
+        {
+            payload->accumulatedColor += volRadiance;
+            // payload->accumulatedColor += surfaceAlpha * diffuse;
+            payload->accumulatedAlpha += surfaceAlpha;
+        }
+    }
+
+    nextRenderPass = PGRNDTraceTerminate;
 }
 
 static __device__ __inline__ float3 getSmoothNormal()
@@ -287,11 +294,7 @@ static __device__ __inline__ float3 getHardNormal()
 
 extern "C" __global__ void __closesthit__occlusion__ch()
 {
-    if (optixGetPayload_0() == 1024)
-    {
-        optixSetPayload_0( static_cast<unsigned int>( 1025 ) );
-        return;
-    }
+    optixSetPayload_0( static_cast<unsigned int>( 1 ) );
 }
 
 extern "C" __global__ void __closesthit__ch()
