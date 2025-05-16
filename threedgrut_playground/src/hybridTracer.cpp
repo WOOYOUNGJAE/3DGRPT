@@ -37,6 +37,7 @@
 #include <algorithm>
 #include <fstream>
 #include <optix.h>
+#include "../include/playground/hybridTracer.h"
 
 
 //------------------------------------------------------------------------------
@@ -76,7 +77,7 @@ HybridOptixTracer::HybridOptixTracer(
     _playgroundState->moduleTriGSTracing = nullptr;
     _playgroundState->pipelineTriGSTracing = nullptr;
     _playgroundState->sbtTriGSTracing = {};
-    createPipeline(
+    createPipeline_PathTracing(
         _playgroundState->context, playgroundPath, threedgrtPath, cuda_path, defines, "playgroundKernel",
         sharedFlags | PipelineFlag_HasRG | PipelineFlag_HasCH | PipelineFlag_HasAH | PipelineFlag_HasMS,
         &_playgroundState->moduleTriGSTracing,
