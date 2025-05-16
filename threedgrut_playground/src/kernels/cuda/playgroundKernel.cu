@@ -27,7 +27,7 @@ extern "C"
 }
 
 #include <optix.h>
-#include <playground/kernels/cuda/trace.cuh>
+#include <playground/kernels/cuda/traceExtend.cuh>
 #include <playground/kernels/cuda/materials.cuh>
 
 constexpr uint32_t MAX_BOUNCES = 32;           // Maximum number of mirror material bounces only (irrelevant to pbr)
@@ -201,18 +201,59 @@ static __device__ __inline__ void handleGlass(const float3 ray_d, float3 normal,
 static __device__ __inline__ void handleDiffuse(const float3 ray_o, const float3 ray_d, float3 normal,
                                                  float& hit_t, unsigned int& nextRenderPass, HybridRayPayload* payload)
 {
-    // Accumulate all gaussian particles up to intersection with mesh surface first
-    const float4 volumetricRadDns = traceGaussians(*(payload->rayData), ray_o, ray_d, 1e-9, hit_t, payload);
-    const float3 volRadiance = make_float3(volumetricRadDns.x, volumetricRadDns.y, volumetricRadDns.z);
-    const float volAlpha = volumetricRadDns.w;
-    payload->accumulatedColor += volRadiance;
-    payload->accumulatedAlpha += volAlpha;
+       // Accumulate all gaussian particles up to intersection with mesh surface first
+       const float4 volumetricRadDns = traceGaussians(*(payload->rayData), ray_o, ray_d, 1e-9, hit_t, payload);
+       const float3 volRadiance = make_float3(volumetricRadDns.x, volumetricRadDns.y, volumetricRadDns.z);
+       const float volAlpha = volumetricRadDns.w;
 
-    const float3 diffuse = get_diffuse_color(ray_d, normal);
-    const float surfaceAlpha = 1.0 - payload->accumulatedAlpha;
-    payload->accumulatedColor += surfaceAlpha * diffuse;
-    payload->accumulatedAlpha += surfaceAlpha;
-    nextRenderPass = PGRNDTraceTerminate;
+       payload->accumulatedAlpha += volAlpha;
+       payload->accumulatedColor += volRadiance;
+       const float3 diffuse = get_diffuse_color(ray_d, normal);
+       const float surfaceAlpha = 1.0 - payload->accumulatedAlpha;
+       float lightPower = 1.f;
+   
+       float3 ray_hitPos = ray_o + hit_t * ray_d;
+       float3 L = make_float3(0,1,0);
+       // L = safe_normalize(L);
+       unsigned int is_occluded;
+       HybridRayPayload occlusionPayload;
+       packPointer(&occlusionPayload, is_occluded);
+       is_occluded = 1024;
+       float3 occlusion_ray_o = ray_hitPos + L * TRACE_MESH_TMIN;
+       optixTrace(
+           params.triHandle,
+           occlusion_ray_o,
+           L,
+           TRACE_MESH_TMIN,
+           TRACE_MESH_TMAX, 0.0f,                // rayTime
+           OptixVisibilityMask( 255 ),
+           OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT | OPTIX_RAY_FLAG_DISABLE_ANYHIT,
+           1,                         // SBT offset
+           1,                          // SBT stride
+           0,                          // missSBTIndex,
+           is_occluded
+           );
+       optixTrace(
+           params.handle,
+           occlusion_ray_o,
+           L,
+           TRACE_MESH_TMIN,
+           TRACE_MESH_TMAX, 0.0f,                // rayTime
+           OptixVisibilityMask( 255 ),
+           OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT | OPTIX_RAY_FLAG_DISABLE_ANYHIT,
+           1,                         // SBT offset
+           1,            // SBT stride
+           0,                          // missSBTIndex,
+           is_occluded
+           );
+   
+   
+       if (is_occluded == 1024)
+       {
+           payload->accumulatedColor += surfaceAlpha * diffuse * lightPower;
+           payload->accumulatedAlpha += surfaceAlpha;
+       }
+       nextRenderPass = PGRNDTraceTerminate;
 }
 
 static __device__ __inline__ float3 getSmoothNormal()
@@ -242,6 +283,15 @@ static __device__ __inline__ float3 getHardNormal()
     optixGetTriangleVertexData(gas, triId, gasSbtIdx, 0, v);
     float3 normal = safe_normalize(cross(v[1] - v[0], v[2] - v[0]));
     return normal;
+}
+
+extern "C" __global__ void __closesthit__occlusion__ch()
+{
+    if (optixGetPayload_0() == 1024)
+    {
+        optixSetPayload_0( static_cast<unsigned int>( 1025 ) );
+        return;
+    }
 }
 
 extern "C" __global__ void __closesthit__ch()

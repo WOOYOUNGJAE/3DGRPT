@@ -118,6 +118,18 @@ protected:
                         OptixShaderBindingTable& sbt,
                         uint32_t numPayloadValues = 32,
                         const std::vector<std::string>& extra_includes = {});
+    void createPipeline_PathTracing(const OptixDeviceContext context,
+                            const std::string& path,
+                            const std::string& dependencies_path,
+                            const std::string& cuda_path,
+                            const std::vector<std::string>& defines,
+                            const std::string& kernel_name,
+                            uint32_t flags,
+                            OptixModule* module,
+                            OptixPipeline* pipeline,
+                            OptixShaderBindingTable& sbt,
+                            uint32_t numPayloadValues = 32,
+                            const std::vector<std::string>& extra_includes = {});
     void reallocateBuffer(CUdeviceptr* bufferPtr, size_t& size, size_t newSize, cudaStream_t cudaStream);
     void reallocatePrimGeomBuffer(cudaStream_t stream);
     void reallocateParamsDevice(size_t sz, cudaStream_t stream);
@@ -140,7 +152,7 @@ public:
 
     virtual ~OptixTracer();
 
-    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
+    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
     virtual trace(uint32_t frameNumber,
                   torch::Tensor rayToWorld,
                   torch::Tensor rayOri,
