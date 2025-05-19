@@ -1145,7 +1145,7 @@ OptixTracer::trace(uint32_t frameNumber,
 
     CUDA_CHECK_LAST();
 
-    return std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>(rayRad, rayDns, rayHit, rayNrm, rayHitsCount, particleVisibility);
+    return std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>(rayRad, rayDns, rayHit, rayNrm, rayHitsCount, particleVisibility);
 }
 
 std::tuple<torch::Tensor, torch::Tensor>
