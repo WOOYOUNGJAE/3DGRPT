@@ -6,7 +6,7 @@
 
 
 
-static __device__ __inline__ float3 get_diffuse_color_gaussian(const float3 ray_d, float3 normal, const float3 radiance)
+static __device__ __inline__ float3 shaded_gaussian(const float3 ray_d, float3 normal, const float3 radiance)
 {
     float3 diffuse = radiance;
 

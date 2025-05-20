@@ -33,8 +33,10 @@ extern "C"
 constexpr uint32_t MAX_BOUNCES = 32;           // Maximum number of mirror material bounces only (irrelevant to pbr)
 constexpr uint32_t TIMEOUT_ITERATIONS = 1000;  // Terminate ray after max iterations to avoid infinite loop
 constexpr float REFRACTION_EPS_SHIFT = 1e-5;   // Add eps amount to refracted rays pos to avoid repeated collisions
+constexpr float EPS_SHIFT_GS = 0.1f; // Add eps amount to secondary rays pos to avoid repeated collisions for Gaussian Tracing
 
 #define USE_SHADOW 1
+#define USE_GS_SHADING 0
 extern "C" __global__ void __raygen__rg() {
 
     const uint3 idx = optixGetLaunchIndex();
@@ -53,7 +55,7 @@ extern "C" __global__ void __raygen__rg() {
     payload.numBounces = 0;
     payload.rndSeed = tea<16>(dim.x * idx.y + idx.x, params.frameNumber);
     const float ray_t_max = params.rayMaxT[idx.z][ry][rx];
-        // Initialize Payload PBR fields
+    // Initialize Payload PBR fields
     payload.accumulatedColor = make_float3(0.0);
     payload.accumulatedAlpha = 0.0;
     payload.directLight = make_float3(0.0);
@@ -94,28 +96,31 @@ extern "C" __global__ void __raygen__rg() {
         float4 volumetricRadDns;
         if (getNextTraceState() == PGRNDTraceRTLastGaussiansPass)
         {
-//             // The last render pass is treated like environment map light which reflects off PBR surfaces
-//             volumetricRadDns = traceGaussians(rayData, rayOri, rayDir, 1e-9, ray_t_max, &payload);
-// #if USE_SHADOW
-//             float3 L = make_float3(0,1,0);
-//             float3 gaussian_normal = payload.rayData->normal;
-//             // L = safe_normalize(L);
-//             float3 ray_hitPos = rayOri + payload.rayData->hitDistance * rayDir;
-//             float3 occlusion_ray_o = ray_hitPos + gaussian_normal * TRACE_MESH_TMIN/*TODO:Temp*/;
-//             unsigned int is_occluded = traceOcclusion(occlusion_ray_o, L);            
-//             // if (is_occluded == 0u)
-// #endif
-//             {
-//                 float alpha = volumetricRadDns.w;
-//                 float pbrTransmittance = clamp(cumulativePBRTransmittance, 0.0f, 1.0f);
-//                 float3 background = getBackgroundColor(rayDir);
-//                 float3 radiance = make_float3(volumetricRadDns.x, volumetricRadDns.y, volumetricRadDns.z);
-// #if USE_SHADOW
-//                 // radiance = get_diffuse_color_gaussian(rayDir, gaussian_normal , radiance);
-// #endif
-//                 payload.directLight = radiance * alpha + background * (1.0f - alpha) * pbrTransmittance;
-//                 payload.accumulatedAlpha = clamp(payload.accumulatedAlpha + alpha , 0.0f, 1.0f);
-//             }
+            // The last render pass is treated like environment map light which reflects off PBR surfaces
+            float gaussianClosestHit_t = -1.f;
+    
+            // Accumulate all gaussian particles up to intersection with mesh surface first
+            volumetricRadDns = traceGaussians_outDist(rayData, rayOri, rayDir, 1e-9, ray_t_max, &payload, gaussianClosestHit_t/*out*/);
+#if USE_SHADOW
+            float3 L = make_float3(0,-1,0);
+            float3 gaussian_normal = payload.rayData->normal;
+            // L = safe_normalize(L);
+            float3 ray_hitPos = rayOri + gaussianClosestHit_t * rayDir;
+            float3 occlusion_ray_o = ray_hitPos + L * EPS_SHIFT_GS;
+            unsigned int is_occluded = traceOcclusion(occlusion_ray_o, L);            
+            if (is_occluded == 0u)
+#endif
+            {
+                float alpha = volumetricRadDns.w;
+                float pbrTransmittance = clamp(cumulativePBRTransmittance, 0.0f, 1.0f);
+                float3 background = getBackgroundColor(rayDir);
+                float3 radiance = make_float3(volumetricRadDns.x, volumetricRadDns.y, volumetricRadDns.z);
+#if USE_SHADOW & USE_GS_SHADING
+                radiance = shaded_gaussian(rayDir, gaussian_normal , radiance);
+#endif
+                payload.directLight = radiance * alpha + background * (1.0f - alpha) * pbrTransmittance;
+                payload.accumulatedAlpha = clamp(payload.accumulatedAlpha + alpha , 0.0f, 1.0f);
+            }
             setNextTraceState(PGRNDTraceTerminate);
         }
         else
@@ -214,20 +219,21 @@ static __device__ __inline__ void handleGlass(const float3 ray_d, float3 normal,
 static __device__ __inline__ void handleDiffuse(const float3 ray_o, const float3 ray_d, float3 normal,
     float& hit_t, unsigned int& nextRenderPass, HybridRayPayload* payload)
 {
+    float gaussianClosestHit_t = -1.f;
+    
     // Accumulate all gaussian particles up to intersection with mesh surface first
-    const float4 volumetricRadDns = traceGaussians(*(payload->rayData), ray_o, ray_d, 1e-9, hit_t, payload);
-    const float3 volRadiance = make_float3(volumetricRadDns.x, volumetricRadDns.y, volumetricRadDns.z);
+    const float4 volumetricRadDns = traceGaussians_outDist(*(payload->rayData), ray_o, ray_d, 1e-9, hit_t, payload, gaussianClosestHit_t/*out*/);
+    float3 volRadiance = make_float3(volumetricRadDns.x, volumetricRadDns.y, volumetricRadDns.z);
     const float volAlpha = volumetricRadDns.w;
     
 #if USE_SHADOW
 
-    const float gaussianHit_t = payload->rayData->hitDistance;
-    unsigned int meshIsCloser = hit_t < gaussianHit_t;
+    unsigned int meshIsCloser = hit_t < gaussianClosestHit_t;
     if (payload->rayData->hitCount == 0.f)
         meshIsCloser = true;
 
 
-    float3 L = make_float3(0,1,0);
+    float3 L = make_float3(0,-1,0);
     // L = safe_normalize(L);
     float3 ray_hitPos;
     float3 occlusion_ray_o;
@@ -240,41 +246,34 @@ static __device__ __inline__ void handleDiffuse(const float3 ray_o, const float3
     }
     else // Gaussian is Closer
     {
-        ray_hitPos = ray_o + gaussianHit_t * safe_normalize(ray_d);
-        occlusion_ray_o = ray_hitPos - ray_d * 0.1f;// * TRACE_MESH_TMIN;// * TRACE_MESH_TMIN;
+        ray_hitPos = ray_o + (gaussianClosestHit_t) * safe_normalize(ray_d);
+        occlusion_ray_o = ray_hitPos + L * EPS_SHIFT_GS;//TRACE_MESH_TMIN;// * TRACE_MESH_TMIN;
     }
     is_occluded = traceOcclusion(occlusion_ray_o, L);
-
-
     const float3 mesh_diffuse = get_diffuse_color(ray_d, normal);
     // const float surfaceAlpha = 1.0 - payload->accumulatedAlpha;   
 
-    // payload->accumulatedColor += volRadiance;
     if (meshIsCloser) 
     {
         if (is_occluded == 0u)
         {
-            payload->accumulatedColor = make_float3(0,1,1);
-            // payload->accumulatedColor += mesh_diffuse;
-        }
-        else
-        {
-            payload->accumulatedColor = make_float3(0,1,0);
+            // payload->accumulatedColor = make_float3(0,1,1);
+            payload->accumulatedColor += mesh_diffuse;
         }
     }
     else
     {
         if (is_occluded == 0u)
         {
-            payload->accumulatedColor = make_float3(1,1,0);
-            // payload->accumulatedColor += volRadiance;
+            // payload->accumulatedColor = make_float3(1,1,0);
+            float3 gaussian_normal = payload->rayData->normal;
+#if USE_GS_SHADING
+            volRadiance = shaded_gaussian(ray_d, gaussian_normal , volRadiance);
+#endif
+            payload->accumulatedColor += volRadiance;
             // payload->accumulatedColor += surfaceAlpha * mesh_diffuse;
-            // payload->accumulatedAlpha += surfaceAlpha;
         }
-        else
-        {
-            payload->accumulatedColor = make_float3(1,0,0);
-        }
+        
 
     }
     payload->accumulatedAlpha += 1.f;
@@ -324,6 +323,7 @@ static __device__ __inline__ float3 getHardNormal()
 extern "C" __global__ void __closesthit__occlusion__ch()
 {
     optixSetPayload_0( static_cast<unsigned int>( 1 ) );
+    optixSetPayload_1( __float_as_uint( optixGetRayTmax() ) ); // dummy for temp
 }
 
 extern "C" __global__ void __closesthit__ch()
@@ -397,3 +397,4 @@ extern "C" __global__ void __miss__ms()
 }
 
 #undef __PLAYGROUND__MODE__
+
