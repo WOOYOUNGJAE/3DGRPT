@@ -12,31 +12,6 @@ static __device__ __forceinline__ void packPointer(void* ptr, unsigned int& i0)
     i0 = uptr >> 32;
 }
 
-/**
- * @brief Ray Payload for PathTracing
- * @note accumulated color(radiance) is in pHybridPRD->accumulatedColor
- */
-struct PTRayPayload {
-    float3       emitted;
-    float3       attenuation;
-    float3       origin;
-    float3       direction;
-    unsigned int seed;
-    int          countEmitted;
-    int          done;
-    int          pad;
-
-    HybridRayPayload* pHybridPRD; // per Ray Data for Mesh-GS Tracing
-
-
-    __device__ __forceinline__ void initialize() {
-        emitted      = make_float3(0.f);
-        attenuation  = make_float3(1.f);
-        countEmitted = true;
-        done         = false;
-        seed         = 0u;
-    }
-};
 
 /**
  * @return closest distance
@@ -258,7 +233,7 @@ static __device__ __inline__ bool traceOcclusion_GS(
 }
 
 
-static __device__ __forceinline__ unsigned int traceOcclusion(const float3 rayOri, const float3 rayDir, const float rayMax)
+static __device__ __forceinline__ unsigned int traceOcclusion(const float3 rayOri, const float3 rayDir)
 {
     unsigned int is_occluded;
     HybridRayPayload occlusionPayload;
@@ -271,7 +246,7 @@ static __device__ __forceinline__ unsigned int traceOcclusion(const float3 rayOr
         rayOri,
         rayDir,
         TRACE_MESH_TMIN,
-        rayMax, 0.0f,                // rayTime
+        TRACE_MESH_TMAX, 0.0f,                // rayTime
         OptixVisibilityMask( 255 ),
         OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT | OPTIX_RAY_FLAG_DISABLE_ANYHIT,
         1,                         // SBT offset
@@ -289,7 +264,7 @@ static __device__ __forceinline__ unsigned int traceOcclusion(const float3 rayOr
         rayOri,
         rayDir,
         TRACE_MESH_TMIN,
-        rayMax, 0.0f,                // rayTime
+        TRACE_MESH_TMAX, 0.0f,                // rayTime
         OptixVisibilityMask( 255 ),
         OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT | OPTIX_RAY_FLAG_DISABLE_ANYHIT,
         1,                         // SBT offset

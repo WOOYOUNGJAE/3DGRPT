@@ -34,7 +34,6 @@ constexpr uint32_t MAX_BOUNCES = 32;           // Maximum number of mirror mater
 constexpr uint32_t TIMEOUT_ITERATIONS = 1000;  // Terminate ray after max iterations to avoid infinite loop
 constexpr float REFRACTION_EPS_SHIFT = 1e-5;   // Add eps amount to refracted rays pos to avoid repeated collisions
 constexpr float EPS_SHIFT_GS = 0.1f; // Add eps amount to secondary rays pos to avoid repeated collisions for Gaussian Tracing
-__constant__ float3 LIGHT_POS = {0.0f, -10.0f, 0.0f};
 
 #define USE_SHADOW 1
 #define USE_GS_SHADING 0
@@ -103,13 +102,12 @@ extern "C" __global__ void __raygen__rg() {
             // Accumulate all gaussian particles up to intersection with mesh surface first
             volumetricRadDns = traceGaussians_outDist(rayData, rayOri, rayDir, 1e-9, ray_t_max, &payload, gaussianClosestHit_t/*out*/);
 #if USE_SHADOW
-            float3 ray_hitPos = rayOri + gaussianClosestHit_t * rayDir;
-            float3 L = LIGHT_POS - ray_hitPos;
+            float3 L = make_float3(0,-1,0);
             float3 gaussian_normal = payload.rayData->normal;
-            float occlusionRayMax = length(L);
-            L = safe_normalize(L);
+            // L = safe_normalize(L);
+            float3 ray_hitPos = rayOri + gaussianClosestHit_t * rayDir;
             float3 occlusion_ray_o = ray_hitPos + L * EPS_SHIFT_GS;
-            unsigned int is_occluded = traceOcclusion(occlusion_ray_o, L, occlusionRayMax);           
+            unsigned int is_occluded = traceOcclusion(occlusion_ray_o, L);            
             if (is_occluded == 0u)
 #endif
             {
@@ -235,34 +233,23 @@ static __device__ __inline__ void handleDiffuse(const float3 ray_o, const float3
         meshIsCloser = true;
 
 
-    // float3 gaussian_normal = payload.rayData->normal;
-
+    float3 L = make_float3(0,-1,0);
+    // L = safe_normalize(L);
     float3 ray_hitPos;
     float3 occlusion_ray_o;
+    unsigned int is_occluded;
+
     if (meshIsCloser)
     {
         ray_hitPos = ray_o + hit_t * ray_d;
-        // occlusion_ray_o = ray_hitPos + normal * TRACE_MESH_TMIN;
-    }
-    else // Gaussian is Closer
-    {
-        ray_hitPos = ray_o + (gaussianClosestHit_t) * safe_normalize(ray_d);
-        // occlusion_ray_o = ray_hitPos + L * EPS_SHIFT_GS;//TRACE_MESH_TMIN;// * TRACE_MESH_TMIN;
-    }
-
-    float3 L = LIGHT_POS - ray_hitPos;
-    float occlusionRayMax = length(L);
-    L = safe_normalize(L);
-    unsigned int is_occluded;
-    if (meshIsCloser) // TODO: too many "if"
-    {
         occlusion_ray_o = ray_hitPos + normal * TRACE_MESH_TMIN;
     }
     else // Gaussian is Closer
     {
+        ray_hitPos = ray_o + (gaussianClosestHit_t) * safe_normalize(ray_d);
         occlusion_ray_o = ray_hitPos + L * EPS_SHIFT_GS;//TRACE_MESH_TMIN;// * TRACE_MESH_TMIN;
     }
-    is_occluded = traceOcclusion(occlusion_ray_o, L, occlusionRayMax);
+    is_occluded = traceOcclusion(occlusion_ray_o, L);
     const float3 mesh_diffuse = get_diffuse_color(ray_d, normal);
     // const float surfaceAlpha = 1.0 - payload->accumulatedAlpha;   
 
