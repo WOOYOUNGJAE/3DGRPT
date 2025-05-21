@@ -36,7 +36,6 @@ constexpr float REFRACTION_EPS_SHIFT = 1e-5;   // Add eps amount to refracted ra
 constexpr float EPS_SHIFT_GS = 0.1f; // Add eps amount to secondary rays pos to avoid repeated collisions for Gaussian Tracing
 __constant__ float3 LIGHT_POS = {0.0f, -10.0f, 0.0f};
 
-
 #define USE_SHADOW 1
 #define USE_GS_SHADING 0
 extern "C" __global__ void __raygen__rg() {
@@ -104,13 +103,19 @@ extern "C" __global__ void __raygen__rg() {
             // Accumulate all gaussian particles up to intersection with mesh surface first
             volumetricRadDns = traceGaussians_outDist(rayData, rayOri, rayDir, 1e-9, ray_t_max, &payload, gaussianClosestHit_t/*out*/);
 #if USE_SHADOW
-            float3 ray_hitPos = rayOri + gaussianClosestHit_t * rayDir;
-            float3 L = LIGHT_POS - ray_hitPos;
             float3 gaussian_normal = payload.rayData->normal;
-            float occlusionRayMax = length(L);
-            L = safe_normalize(L);
-            float3 occlusion_ray_o = ray_hitPos + L * EPS_SHIFT_GS;
-            unsigned int is_occluded = traceOcclusion(occlusion_ray_o, L, occlusionRayMax);            
+            unsigned int is_occluded = 0u;
+            if (payload.rayData->hitCount > 0)
+            {
+                float3 ray_hitPos = rayOri + gaussianClosestHit_t * rayDir;
+                float3 L = LIGHT_POS - ray_hitPos;
+                float occlusionRayMax = length(L);
+                L = safe_normalize(L);
+                float3 occlusion_ray_o = ray_hitPos + L * EPS_SHIFT_GS;
+    
+                is_occluded = traceOcclusion(occlusion_ray_o, L, occlusionRayMax);
+            }
+            
             if (is_occluded == 0u)
 #endif
             {
@@ -237,7 +242,7 @@ static __device__ __inline__ void handleDiffuse(const float3 ray_o, const float3
 
 
     // float3 gaussian_normal = payload.rayData->normal;
-    
+
     float3 ray_hitPos;
     float3 occlusion_ray_o;
     if (meshIsCloser)

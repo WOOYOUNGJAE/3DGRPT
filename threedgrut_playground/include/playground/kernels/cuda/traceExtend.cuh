@@ -47,7 +47,7 @@ static __device__ __inline__ float traceVolumetricGS_outDist(
     const float3& rayDirection,
     const float tmin,
     const float tmax) {
-
+    bool isFirstLoop = true;
     float outDistance = -1.f;
     const uint3 idx = optixGetLaunchIndex();
     if ((idx.x > params.frameBounds.x) || (idx.y > params.frameBounds.y)) {
@@ -99,8 +99,11 @@ static __device__ __inline__ float traceVolumetricGS_outDist(
 #ifdef ENABLE_HIT_COUNTS
                 rayData.hitCount += hitWeight > 0.f ? 1.0f : 0.f;
 #endif
-                if (outDistance < 0.f) // First Loop
+                if (isFirstLoop == true)// // First Loop
+                {
+                    isFirstLoop = false;
                     outDistance = rayHit.distance;
+                }
             }
         }
     }
