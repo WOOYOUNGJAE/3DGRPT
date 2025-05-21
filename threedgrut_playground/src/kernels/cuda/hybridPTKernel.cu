@@ -415,5 +415,11 @@ extern "C" __global__ void __miss__ms()
     }
 }
 
+
+extern "C" __global__ void __miss__occlusion__ms()
+{
+
+}
+
 #undef __PLAYGROUND__MODE__
 
