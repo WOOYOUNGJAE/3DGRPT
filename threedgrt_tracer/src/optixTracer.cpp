@@ -39,6 +39,9 @@
 //------------------------------------------------------------------------------
 //
 //------------------------------------------------------------------------------
+
+OptixCompileDebugLevel g_curCompileDebugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL; //OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL;
+OptixCompileOptimizationLevel g_curCompileOptLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0;// OPTIX_COMPILE_OPTIMIZATION_LEVEL_3
 namespace {
 
 void contextLogCB(unsigned int level, const char* tag, const char* message, void* /*cbdata */) {
@@ -329,8 +332,8 @@ void OptixTracer::createPipeline(const OptixDeviceContext context,
     {
         OptixModuleCompileOptions module_compile_options = {};
         module_compile_options.maxRegisterCount          = OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT;
-        module_compile_options.optLevel                  = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3;
-        module_compile_options.debugLevel                = OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL;
+        module_compile_options.optLevel                  = g_curCompileOptLevel;
+        module_compile_options.debugLevel                = g_curCompileDebugLevel;
 
         pipeline_compile_options.usesMotionBlur                   = false;
         pipeline_compile_options.traversableGraphFlags            = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS;
@@ -435,7 +438,7 @@ void OptixTracer::createPipeline(const OptixDeviceContext context,
 
         OptixPipelineLinkOptions pipeline_link_options = {};
         pipeline_link_options.maxTraceDepth            = max_trace_depth;
-        pipeline_link_options.debugLevel               = OPTIX_COMPILE_DEBUG_LEVEL_DEFAULT;
+        pipeline_link_options.debugLevel               = g_curCompileDebugLevel;
         size_t sizeof_log                              = sizeof(log);
         OPTIX_CHECK_LOG(optixPipelineCreate(context, &pipeline_compile_options, &pipeline_link_options,
                                             program_groups.data(), static_cast<unsigned int>(program_groups.size()),
@@ -508,8 +511,8 @@ void OptixTracer::createPipeline_PathTracing(const OptixDeviceContext context, c
     {
         OptixModuleCompileOptions module_compile_options = {};
         module_compile_options.maxRegisterCount          = OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT;
-        module_compile_options.optLevel                  = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3;
-        module_compile_options.debugLevel                = OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL;
+        module_compile_options.optLevel                  = g_curCompileOptLevel;
+        module_compile_options.debugLevel                = g_curCompileDebugLevel;
 
         pipeline_compile_options.usesMotionBlur                   = false;
         pipeline_compile_options.traversableGraphFlags            = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS;
@@ -614,7 +617,7 @@ void OptixTracer::createPipeline_PathTracing(const OptixDeviceContext context, c
     // Link pipeline
     //
     {
-        const uint32_t max_trace_depth = 1;
+        const uint32_t max_trace_depth = 2;
 
         std::vector<OptixProgramGroup> program_groups;
         program_groups.push_back(raygen_prog_group);
@@ -626,7 +629,7 @@ void OptixTracer::createPipeline_PathTracing(const OptixDeviceContext context, c
 
         OptixPipelineLinkOptions pipeline_link_options = {};
         pipeline_link_options.maxTraceDepth            = max_trace_depth;
-        pipeline_link_options.debugLevel               = OPTIX_COMPILE_DEBUG_LEVEL_DEFAULT;
+        pipeline_link_options.debugLevel               = g_curCompileDebugLevel;
         OPTIX_CHECK_LOG(optixPipelineCreate(context, &pipeline_compile_options, &pipeline_link_options,
                                             program_groups.data(), static_cast<unsigned int>(program_groups.size()),
                                             log, &sizeof_log, pipeline));
