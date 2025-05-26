@@ -78,7 +78,7 @@ HybridOptixTracer::HybridOptixTracer(
     _playgroundState->pipelineTriGSTracing = nullptr;
     _playgroundState->sbtTriGSTracing = {};
     createPipeline_PathTracing(
-        _playgroundState->context, playgroundPath, threedgrtPath, cuda_path, defines, "hybridPTKernel"/*TODO Temp*/,
+        _playgroundState->context, playgroundPath, threedgrtPath, cuda_path, defines, "hybridPTKernel"/*TODO Temp, playgroundKernel*/,
         sharedFlags | PipelineFlag_HasRG | PipelineFlag_HasCH | PipelineFlag_HasAH | PipelineFlag_HasMS,
         &_playgroundState->moduleTriGSTracing,
         &_playgroundState->pipelineTriGSTracing,

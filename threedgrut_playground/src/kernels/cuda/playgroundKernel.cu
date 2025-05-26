@@ -101,7 +101,7 @@ extern "C" __global__ void __raygen__rg() {
             float gaussianClosestHit_t = -1.f;
     
             // Accumulate all gaussian particles up to intersection with mesh surface first
-            volumetricRadDns = traceGaussians_outDist(rayData, rayOri, rayDir, 1e-9, ray_t_max, &payload, gaussianClosestHit_t/*out*/);
+            volumetricRadDns = traceGaussians_outDist<HybridRayPayload>(rayData, rayOri, rayDir, 1e-9, ray_t_max, &payload, gaussianClosestHit_t/*out*/);
 #if USE_SHADOW
             float3 gaussian_normal = payload.rayData->normal;
             unsigned int is_occluded = 0u;
@@ -151,6 +151,7 @@ extern "C" __global__ void __raygen__rg() {
             break;
     }
 
+    payload.accumulatedAlpha = clamp(payload.accumulatedAlpha, 0.0f, 1.0f);
     // Write back to global mem in launch params
     const float4 rgba = make_float4(payload.accumulatedColor.x, payload.accumulatedColor.y, payload.accumulatedColor.z,
                                     payload.accumulatedAlpha);
@@ -230,7 +231,7 @@ static __device__ __inline__ void handleDiffuse(const float3 ray_o, const float3
     float gaussianClosestHit_t = -1.f;
     
     // Accumulate all gaussian particles up to intersection with mesh surface first
-    const float4 volumetricRadDns = traceGaussians_outDist(*(payload->rayData), ray_o, ray_d, 1e-9, hit_t, payload, gaussianClosestHit_t/*out*/);
+    const float4 volumetricRadDns = traceGaussians_outDist<HybridRayPayload>(*(payload->rayData), ray_o, ray_d, 1e-9, hit_t, payload, gaussianClosestHit_t/*out*/);
     float3 volRadiance = make_float3(volumetricRadDns.x, volumetricRadDns.y, volumetricRadDns.z);
     const float volAlpha = volumetricRadDns.w;
     
