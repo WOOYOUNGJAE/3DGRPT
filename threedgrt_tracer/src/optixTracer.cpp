@@ -40,8 +40,8 @@
 //
 //------------------------------------------------------------------------------
 
-OptixCompileDebugLevel g_curCompileDebugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL; //OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL;
-OptixCompileOptimizationLevel g_curCompileOptLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0;// OPTIX_COMPILE_OPTIMIZATION_LEVEL_3
+OptixCompileDebugLevel g_curCompileDebugLevel = OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL; // OPTIX_COMPILE_DEBUG_LEVEL_FULL; //OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL;
+OptixCompileOptimizationLevel g_curCompileOptLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3; // OPTIX_COMPILE_OPTIMIZATION_LEVEL_0;// OPTIX_COMPILE_OPTIMIZATION_LEVEL_3
 namespace {
 
 void contextLogCB(unsigned int level, const char* tag, const char* message, void* /*cbdata */) {

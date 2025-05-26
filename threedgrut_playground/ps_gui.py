@@ -893,12 +893,9 @@ class Playground:
             psim.PopItemWidth()
 
             psim.PushItemWidth(350)
-            changed, values = psim.SliderFloat3(
+            changed, values = psim.InputFloat3(
                 "Translate",
-                [object_transform.tx, object_transform.ty, object_transform.tz],
-                v_min=-5.0, v_max=5.0,
-                format="%.4f",
-                power=1.0
+                [object_transform.tx, object_transform.ty, object_transform.tz]
             )
             if changed:
                 object_transform.tx = values[0]

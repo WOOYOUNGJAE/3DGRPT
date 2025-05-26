@@ -2,6 +2,8 @@
 #ifdef __PLAYGROUND__MODE__
 
 #include <playground/kernels/cuda/trace.cuh>
+#include <playground/kernels/cuda/rng.cuh>
+#include <playground/pathTracing.cuh>
 
 constexpr uint32_t MAX_BOUNCES = 32;           // Maximum number of mirror material bounces only (irrelevant to pbr)
 constexpr uint32_t TIMEOUT_ITERATIONS = 1000;  // Terminate ray after max iterations to avoid infinite loop
@@ -9,12 +11,12 @@ constexpr float REFRACTION_EPS_SHIFT = 1e-5;   // Add eps amount to refracted ra
 
 constexpr float EPS_SHIFT_GS = 0.1f; // Add eps amount to secondary rays pos to avoid repeated collisions for Gaussian Tracing
 constexpr float TRACE_MAX = 1e5;
-__constant__ float3 LIGHT_POS = {0.0f, -10.0f, 0.0f}; // only for point light
-__constant__ float3 LIGHT_CORNER = {0.0f, -10.0f, 0.0f};
+__constant__ float3 LIGHT_POS = {0.0f, -6.0f, 0.0f}; // only for point light
+__constant__ float3 LIGHT_CORNER = {-4.0f, 2.245f, 9.f}; // cornell box : -4, 2.245, 3.78
 __constant__ float3 LIGHT_V1 = {2.0f, 0.0f, -2.0f};
 __constant__ float3 LIGHT_V2 = {2.0f, 0.0f, 2.0f};
-__constant__ float3 LIGHT_NORMAL = {0.0f, 1.0f, 0.0f};
-__constant__ float3 LIGHT_EMISSION = {15.f, 15.f, 15.f}; // Light Color
+__constant__ float3 LIGHT_NORMAL = {0.0f, 0.0f, -1.0f};
+__constant__ float3 LIGHT_EMISSION = {200.f, 200.f, 200.f}; // Light Color
 __constant__ float3 EMISSION_COLOR = {0.f, 0.f, 0.f}; // {15.f, 15.f, 5.f}; // If Emission Object: this, Non-Emmision Object: Zero
 /**
  * @overload : pack single pointer to payload
@@ -414,7 +416,35 @@ namespace PT
                 float3 ray_hitPos = rayOri + gaussianClosestHit_t * rayDir;
                 float3 hitNormal = pPayload->rayData->normal;
                 
-                float3 L = LIGHT_POS - ray_hitPos;
+                // Add object's emission color once
+                if( pPayload->countEmitted )
+                    pPayload->emitted = EMISSION_COLOR;
+                else
+                    pPayload->emitted = make_float3( 0.0f );
+
+                // reset seed, ray_dir&pos from hemisphere sampling
+                unsigned int seed = pPayload->rndSeed;
+                {
+                    const float z1 = rnd(seed);
+                    const float z2 = rnd(seed);
+
+                    float3 w_in;
+                    PT::cosine_sample_hemisphere( z1, z2, w_in );
+                    PT::Onb onb( hitNormal );
+                    onb.inverse_transform( w_in );
+                    pPayload->rayDir = w_in;
+                    pPayload->rayOri = ray_hitPos;
+
+                    pPayload->countEmitted = false;
+                }
+                
+                const float z1 = rnd(seed);
+                const float z2 = rnd(seed);
+                pPayload->rndSeed = seed;
+
+                float3 curLightPos = LIGHT_CORNER + LIGHT_V1 * z1 + LIGHT_V2 * z2;
+
+                float3 L = curLightPos - ray_hitPos;
                 float occlusionRayMax = length(L);
                 L = safe_normalize(L);
                 const float nDl = dot( hitNormal, L );
@@ -439,12 +469,7 @@ namespace PT
                         weight = nDl * LnDl * A / (M_PIf * occlusionRayMax * occlusionRayMax);
                     }
                 }
-
-                if( pPayload->countEmitted )
-                    pPayload->emitted = EMISSION_COLOR;
-                else
-                    pPayload->emitted = make_float3( 0.0f );
-
+                
                 pPayload->attenuationRGB *= (volRadiance * volAlpha); // Apply volRadiance(as diffuse of gaussian) to attenuation
                 pPayload->ptRadiance += LIGHT_EMISSION * weight;
                 pPayload->accumulatedAlpha += volAlpha;

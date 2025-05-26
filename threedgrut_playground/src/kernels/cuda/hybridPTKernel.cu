@@ -29,10 +29,10 @@ extern "C"
 #include <optix.h>
 #include <playground/kernels/cuda/traceExtend.cuh>
 #include <playground/kernels/cuda/materialsExtend.cuh>
-// #include <playground/pathTracing.h>
 
 #define USE_SHADOW 1
 #define USE_GS_SHADING 0
+#define SAMPLES_PER_LAUNCH 8
 extern "C" __global__ void __raygen__rg() {
 
     const uint3 idx = optixGetLaunchIndex();
@@ -43,10 +43,15 @@ extern "C" __global__ void __raygen__rg() {
     const int rx = fminf(idx.x, params.frameBounds.x);
     const int ry = fminf(idx.y, params.frameBounds.y);
 
+    // jitter
+    unsigned int seed = tea<16>(dim.x * idx.y + idx.x, params.frameNumber);
+    
+
+
     // Initialize Payload
     PT::RayPayload payload;
     payload.initialize();
-    payload.rndSeed = tea<16>(dim.x * idx.y + idx.x, params.frameNumber);
+    payload.rndSeed = seed;
     const float ray_t_max = params.rayMaxT[idx.z][ry][rx];
     RayData rayData;
     rayData.initialize();
@@ -54,7 +59,16 @@ extern "C" __global__ void __raygen__rg() {
     payload.rayOri = rayOrigin;
     payload.rayDir = rayDirection;
     int depth = 0;
+    
     float3 resultRGB = make_float3( 0.0f );
+    int remaningSamples = SAMPLES_PER_LAUNCH;
+    do
+    {
+        const float2 subpixel_jitter = make_float2( rnd( seed )-0.5f, rnd( seed )-0.5f );
+        
+    } while ({--remaningSamples});
+    
+    
     for( ;; )
     {
         PT::traceRadiance(
@@ -165,8 +179,37 @@ extern "C" __global__ void __closesthit__ch()
         hitNormal = pPayload->rayData->normal;
         hitRGB = volRadiance; // Apply volRadiance(as diffuse of gaussian) to attenuation
     }
+
+    // Add object's emission color once
+    if( pPayload->countEmitted )
+        pPayload->emitted = EMISSION_COLOR;
+    else
+        pPayload->emitted = make_float3( 0.0f );
+
+    // reset seed, ray_dir&pos from hemisphere sampling
+    unsigned int seed = pPayload->rndSeed;
+    {
+        const float z1 = rnd(seed);
+        const float z2 = rnd(seed);
+
+        float3 w_in;
+        PT::cosine_sample_hemisphere( z1, z2, w_in );
+        PT::Onb onb( hitNormal );
+        onb.inverse_transform( w_in );
+        pPayload->rayDir = w_in;
+        pPayload->rayOri = ray_hitPos;
+
+        pPayload->countEmitted = false;
+    }
     
-    float3 L = LIGHT_POS - ray_hitPos;
+    const float z1 = rnd(seed);
+    const float z2 = rnd(seed);
+    pPayload->rndSeed = seed;
+
+    float3 curLightPos = LIGHT_CORNER + LIGHT_V1 * z1 + LIGHT_V2 * z2;
+
+
+    float3 L = curLightPos - ray_hitPos;
     float occlusionRayMax = length(L);
     L = safe_normalize(L);
     const float nDl = dot( hitNormal, L );
@@ -194,10 +237,7 @@ extern "C" __global__ void __closesthit__ch()
     }
 
     // process color info
-    if( pPayload->countEmitted )
-        pPayload->emitted = EMISSION_COLOR;
-    else
-        pPayload->emitted = make_float3( 0.0f );
+
 
     pPayload->accumulatedAlpha += 1.f; // Assume this is diffuse
     pPayload->attenuationRGB *= hitRGB;
