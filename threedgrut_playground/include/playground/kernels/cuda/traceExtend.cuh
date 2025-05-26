@@ -15,8 +15,7 @@ __constant__ float3 LIGHT_V1 = {2.0f, 0.0f, -2.0f};
 __constant__ float3 LIGHT_V2 = {2.0f, 0.0f, 2.0f};
 __constant__ float3 LIGHT_NORMAL = {0.0f, 1.0f, 0.0f};
 __constant__ float3 LIGHT_EMISSION = {15.f, 15.f, 15.f}; // Light Color
-__constant__ float3 EMISSION_COLOR = {15.f, 15.f, 5.f}; // If Emission Object: this, Non-Emmision Object: Zero
-
+__constant__ float3 EMISSION_COLOR = {0.f, 0.f, 0.f}; // {15.f, 15.f, 5.f}; // If Emission Object: this, Non-Emmision Object: Zero
 /**
  * @overload : pack single pointer to payload
  */
@@ -338,6 +337,7 @@ namespace PT
             done         = false;
             t_hit = 0.f;
             numBounces = 0u;
+            rayMissed = false;
             // seed         = 0u;
         }
     };
@@ -394,7 +394,6 @@ namespace PT
             // Process ClosestHit, AnyHit, Miss for Mesh
             traceRadiance_Mesh(rayOri, rayDir, pPayload);
     
-    
             // Ratio of the light which didn't go through the material: [0,1], where 1.0 means no light went through
             // (TODO: This is actually the inverse transmittance)
     
@@ -440,10 +439,15 @@ namespace PT
                         weight = nDl * LnDl * A / (M_PIf * occlusionRayMax * occlusionRayMax);
                     }
                 }
+
+                if( pPayload->countEmitted )
+                    pPayload->emitted = EMISSION_COLOR;
+                else
+                    pPayload->emitted = make_float3( 0.0f );
+
                 pPayload->attenuationRGB *= (volRadiance * volAlpha); // Apply volRadiance(as diffuse of gaussian) to attenuation
                 pPayload->ptRadiance += LIGHT_EMISSION * weight;
                 pPayload->accumulatedAlpha += volAlpha;
-
 
                 setNextTraceState(PGRNDTraceTerminate);
             }
@@ -463,8 +467,9 @@ namespace PT
             if (timeout > TIMEOUT_ITERATIONS)
                 break;
 
-            break; // TODO only once for now
+            break;
         }
+        pPayload->countEmitted = false;
         // payload.accumulatedColor += payload.directLight * (1.0f - payload.blockingRadiance);
     }
 }

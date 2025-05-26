@@ -51,6 +51,8 @@ extern "C" __global__ void __raygen__rg() {
     RayData rayData;
     rayData.initialize();
     payload.rayData = &rayData;
+    payload.rayOri = rayOrigin;
+    payload.rayDir = rayDirection;
     int depth = 0;
     float3 resultRGB = make_float3( 0.0f );
     for( ;; )
@@ -64,7 +66,7 @@ extern "C" __global__ void __raygen__rg() {
 
         resultRGB += payload.emitted;
         resultRGB += payload.ptRadiance * payload.attenuationRGB;
-
+                
         if( payload.done  || depth >= 3 ) // TODO RR, variable for depth
             break;
 
@@ -73,7 +75,6 @@ extern "C" __global__ void __raygen__rg() {
 
         ++depth;
     }
-
     // Write back to global mem in launch params
     const float4 rgba = make_float4(resultRGB.x, resultRGB.y, resultRGB.z,
                                     payload.accumulatedAlpha);
@@ -123,8 +124,6 @@ extern "C" __global__ void __closesthit__ch()
 
     // Read inputs off payload
     PT::RayPayload* pPayload = PT::getRayPayload<PT::RayPayload>();
-    pPayload->countEmitted = false;
-
     // get payload value
     unsigned int numBounces = pPayload->numBounces;  // Number of times ray was reflected so far
     unsigned int next_render_pass = getNextTraceState();
@@ -204,7 +203,6 @@ extern "C" __global__ void __closesthit__ch()
     pPayload->attenuationRGB *= hitRGB;
     pPayload->ptRadiance += LIGHT_EMISSION * weight;
 
-
     // -- Write outputs to pPayload --
     // Intersection point - also determines origin of next ray
     pPayload->t_hit = hit_t;
@@ -217,7 +215,7 @@ extern "C" __global__ void __closesthit__ch()
     pPayload->rndSeed = rndSeed;
 
     // Output: Ray hit something so it is considered redirected (->Gaussians pass), or terminate
-    setNextTraceState(next_render_pass);
+    setNextTraceState(PGRNDTraceTerminate);
 }
 
 extern "C" __global__ void __intersection__is() {
