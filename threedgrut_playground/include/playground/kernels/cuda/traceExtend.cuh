@@ -16,7 +16,7 @@ __constant__ float3 LIGHT_CORNER = {-4.0f, 2.245f, 9.f}; // cornell box : -4, 2.
 __constant__ float3 LIGHT_V1 = {2.0f, 0.0f, -2.0f};
 __constant__ float3 LIGHT_V2 = {2.0f, 0.0f, 2.0f};
 __constant__ float3 LIGHT_NORMAL = {0.0f, 0.0f, -1.0f};
-__constant__ float3 LIGHT_EMISSION = {200.f, 200.f, 200.f}; // Light Color
+__constant__ float3 LIGHT_EMISSION = {100.f, 100.f, 100.f}; // Light Color
 __constant__ float3 EMISSION_COLOR = {0.f, 0.f, 0.f}; // {15.f, 15.f, 5.f}; // If Emission Object: this, Non-Emmision Object: Zero
 /**
  * @overload : pack single pointer to payload
@@ -442,7 +442,9 @@ namespace PT
                 const float z2 = rnd(seed);
                 pPayload->rndSeed = seed;
 
-                float3 curLightPos = LIGHT_CORNER + LIGHT_V1 * z1 + LIGHT_V2 * z2;
+                float3 lightV1 = params.lightV1;
+                float3 lightV2 = params.lightV2;
+                float3 curLightPos = params.lightCorner + lightV1 * z1 + lightV2 * z2;
 
                 float3 L = curLightPos - ray_hitPos;
                 float occlusionRayMax = length(L);
@@ -465,13 +467,13 @@ namespace PT
 
                     if( !is_occluded )
                     {
-                        const float A = length(cross(LIGHT_V1, LIGHT_V2));
+                        const float A = length(cross(lightV1, lightV2));
                         weight = nDl * LnDl * A / (M_PIf * occlusionRayMax * occlusionRayMax);
                     }
                 }
                 
                 pPayload->attenuationRGB *= (volRadiance * volAlpha); // Apply volRadiance(as diffuse of gaussian) to attenuation
-                pPayload->ptRadiance += LIGHT_EMISSION * weight;
+                pPayload->ptRadiance += params.lightEmission * weight;
                 pPayload->accumulatedAlpha += volAlpha;
 
                 setNextTraceState(PGRNDTraceTerminate);

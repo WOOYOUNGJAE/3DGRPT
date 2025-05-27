@@ -77,4 +77,13 @@ struct PlaygroundPipelineParameters: PipelineParameters
     // Per triangle attributes
     PackedTensorAccessor32<int32_t, 2> primType;         // see PlaygroundPrimitiveTypes
     PackedTensorAccessor32<float, 2> refractiveIndex;    // glass refraction, higher -> thicker glass
+
+    unsigned int width;
+    unsigned int height;
+
+    float3 lightCorner;
+    float3 lightV1;
+    float3 lightV2;
+    float3 lightNormal;
+    float3 lightEmission;    
 };

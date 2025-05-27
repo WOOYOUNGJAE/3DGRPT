@@ -114,7 +114,8 @@ public:
         bool particleKernelDensityClamping,
         int particleRadianceSphDegree,
         bool enableNormals,
-        bool enableHitCounts);
+        bool enableHitCounts,
+        const std::string& kernelName);
 
     ~HybridOptixTracer() override;
 
@@ -126,6 +127,8 @@ public:
     void syncMaterials(PlaygroundPipelineParameters& params,
                        const std::vector<CPBRMaterial>& materials,
                        cudaStream_t cudaStream);
+    void syncGlobalVariables(PlaygroundPipelineParameters& params,
+        const torch::Tensor& paramData);
 
     std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
     traceHybrid(uint32_t frameNumber,
@@ -150,6 +153,34 @@ public:
                 torch::Tensor refractiveIndex,
                 torch::Tensor backgroundColor,
                 torch::Tensor envmap,
+                bool enableEnvmap,
+                bool useEnvmapAsBackground,
+                const unsigned int maxPBRBounces);
+
+    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
+    traceHybrid_PathTracing(uint32_t frameNumber,
+                torch::Tensor rayToWorld,
+                torch::Tensor rayOri,
+                torch::Tensor rayDir,
+                torch::Tensor particleDensity,
+                torch::Tensor particleRadiance,
+                int sphDegree,
+                float minTransmittance,
+                torch::Tensor rayMaxT,
+                uint32_t playgroundOpts,
+                torch::Tensor triangles,
+                torch::Tensor vNormals,
+                torch::Tensor vTangents,
+                torch::Tensor vHasTangents,
+                torch::Tensor primType,
+                torch::Tensor matUV,
+                torch::Tensor matID,
+                const std::vector<CPBRMaterial>& materials,
+                bool shouldSyncMaterials,
+                torch::Tensor refractiveIndex,
+                torch::Tensor backgroundColor,
+                torch::Tensor envmap,
+                torch::Tensor paramData,
                 bool enableEnvmap,
                 bool useEnvmapAsBackground,
                 const unsigned int maxPBRBounces);

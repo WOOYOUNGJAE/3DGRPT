@@ -32,7 +32,7 @@ extern "C"
 
 #define USE_SHADOW 1
 #define USE_GS_SHADING 0
-#define SAMPLES_PER_LAUNCH 8
+__constant__ unsigned int SAMPLES_PER_LAUNCH = 1;
 extern "C" __global__ void __raygen__rg() {
 
     const uint3 idx = optixGetLaunchIndex();
@@ -45,52 +45,63 @@ extern "C" __global__ void __raygen__rg() {
 
     // jitter
     unsigned int seed = tea<16>(dim.x * idx.y + idx.x, params.frameNumber);
-    
+    const int width   = params.width;
+    const int height   = params.height;
 
 
-    // Initialize Payload
-    PT::RayPayload payload;
-    payload.initialize();
-    payload.rndSeed = seed;
-    const float ray_t_max = params.rayMaxT[idx.z][ry][rx];
-    RayData rayData;
-    rayData.initialize();
-    payload.rayData = &rayData;
-    payload.rayOri = rayOrigin;
-    payload.rayDir = rayDirection;
-    int depth = 0;
     
     float3 resultRGB = make_float3( 0.0f );
     int remaningSamples = SAMPLES_PER_LAUNCH;
+    PT::RayPayload payload;
     do
     {
+        // Initialize Payload
+        payload.initialize();
+        payload.rndSeed = seed;
+        const float ray_t_max = params.rayMaxT[idx.z][ry][rx];
+        RayData rayData;
+        rayData.initialize();
+        payload.rayData = &rayData;
+        payload.rayOri = rayOrigin;
+        int depth = 0;
+
+
         const float2 subpixel_jitter = make_float2( rnd( seed )-0.5f, rnd( seed )-0.5f );
-        
-    } while ({--remaningSamples});
+        const float2 d = 2.0f * make_float2(
+            ( static_cast<float>( idx.x ) + subpixel_jitter.x ) / static_cast<float>( width ),
+            ( static_cast<float>( idx.y ) + subpixel_jitter.y ) / static_cast<float>( height )
+            ) - 1.0f;     
+        // rayDirection = safe_normalize(make_float3(rayDirection.x * d.x, rayDirection.y * d.y, rayDirection.z));
+        payload.rayDir = rayDirection;
+
+        for( ;; )
+        {
+            PT::traceRadiance(
+                rayOrigin,
+                rayDirection,
+                0.01f,  // tmin       // TODO: smarter offset
+                ray_t_max,  // tmax
+                &payload );
+
+            resultRGB += payload.emitted;
+            resultRGB += payload.ptRadiance * payload.attenuationRGB;
+                    
+            if( payload.done  || depth >= 3 ) // TODO RR, variable for depth
+                break;
+
+            rayOrigin    = payload.rayOri;
+            rayDirection = payload.rayDir;
+
+            ++depth;
+        }
+    } while (--remaningSamples);
     
     
-    for( ;; )
-    {
-        PT::traceRadiance(
-            rayOrigin,
-            rayDirection,
-            0.01f,  // tmin       // TODO: smarter offset
-            ray_t_max,  // tmax
-            &payload );
-
-        resultRGB += payload.emitted;
-        resultRGB += payload.ptRadiance * payload.attenuationRGB;
-                
-        if( payload.done  || depth >= 3 ) // TODO RR, variable for depth
-            break;
-
-        rayOrigin    = payload.rayOri;
-        rayDirection = payload.rayDir;
-
-        ++depth;
-    }
+    
     // Write back to global mem in launch params
-    const float4 rgba = make_float4(resultRGB.x, resultRGB.y, resultRGB.z,
+    float4 rgba = make_float4(resultRGB.x / static_cast<float>(SAMPLES_PER_LAUNCH),
+                              resultRGB.y / static_cast<float>(SAMPLES_PER_LAUNCH),
+                              resultRGB.z / static_cast<float>(SAMPLES_PER_LAUNCH),
                                     payload.accumulatedAlpha);
 
     writeRadianceDensityToOutputBuffer(rgba);
@@ -206,7 +217,9 @@ extern "C" __global__ void __closesthit__ch()
     const float z2 = rnd(seed);
     pPayload->rndSeed = seed;
 
-    float3 curLightPos = LIGHT_CORNER + LIGHT_V1 * z1 + LIGHT_V2 * z2;
+    float3 lightV1 = params.lightV1;
+    float3 lightV2 = params.lightV2;
+    float3 curLightPos = params.lightCorner + lightV1 * z1 + lightV2 * z2;
 
 
     float3 L = curLightPos - ray_hitPos;
@@ -231,7 +244,7 @@ extern "C" __global__ void __closesthit__ch()
 
         if( !is_occluded )
         {
-            const float A = length(cross(LIGHT_V1, LIGHT_V2));
+            const float A = length(cross(lightV1, lightV2));
             weight = nDl * LnDl * A / (M_PIf * occlusionRayMax * occlusionRayMax);
         }
     }
@@ -241,7 +254,7 @@ extern "C" __global__ void __closesthit__ch()
 
     pPayload->accumulatedAlpha += 1.f; // Assume this is diffuse
     pPayload->attenuationRGB *= hitRGB;
-    pPayload->ptRadiance += LIGHT_EMISSION * weight;
+    pPayload->ptRadiance += params.lightEmission * weight;
 
     // -- Write outputs to pPayload --
     // Intersection point - also determines origin of next ray
