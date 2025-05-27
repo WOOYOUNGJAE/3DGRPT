@@ -984,6 +984,71 @@ class Playground:
 
         psim.PopItemWidth()
         return is_not_removed
+    
+    def _draw_global_param(self):
+        """control some members of PlaygroundPipelineParameters"""
+        global_param = self.engine.tracer.pipeline_global_param
+        psim.SetNextItemOpen(True, psim.ImGuiCond_FirstUseEver)
+        if psim.TreeNode("Global Param"):
+            psim.PushItemWidth(350)
+
+            # LIGHT_CORNER
+            changed, values = psim.SliderFloat3(
+                "Light Corner",
+                global_param[0].tolist(),
+                v_min=-20.0, v_max=20.0,
+                format="%.3f",
+                power=1.0
+            )
+            if changed:
+                global_param[0] = torch.tensor(values, dtype=torch.float32)
+
+            # LIGHT_V1
+            changed, values = psim.SliderFloat3(
+                "Light V1",
+                global_param[1].tolist(),
+                v_min=-10.0, v_max=10.0,
+                format="%.3f",
+                power=1.0
+            )
+            if changed:
+                global_param[1] = torch.tensor(values, dtype=torch.float32)
+
+            # LIGHT_V2
+            changed, values = psim.SliderFloat3(
+                "Light V2",
+                global_param[2].tolist(),
+                v_min=-10.0, v_max=10.0,
+                format="%.3f",
+                power=1.0
+            )
+            if changed:
+                global_param[2] = torch.tensor(values, dtype=torch.float32)
+
+            # LIGHT_NORMAL
+            changed, values = psim.SliderFloat3(
+                "Light Normal",
+                global_param[3].tolist(),
+                v_min=-1.0, v_max=1.0,
+                format="%.3f",
+                power=1.0
+            )
+            if changed:
+                global_param[3] = torch.tensor(values, dtype=torch.float32)
+
+            # LIGHT_EMISSION
+            changed, values = psim.SliderFloat3(
+                "Light Emission",
+                global_param[4].tolist(),
+                v_min=0.0, v_max=1000.0,
+                format="%.1f",
+                power=1.0
+            )
+            if changed:
+                global_param[4] = torch.tensor(values, dtype=torch.float32)
+
+            psim.PopItemWidth()
+            psim.TreePop()
 
     @torch.cuda.nvtx.range("ps_ui_callback")
     def ps_ui_callback(self):
@@ -1003,6 +1068,8 @@ class Playground:
         self._draw_materials_widget()
         psim.Separator()
         self._draw_primitives_widget()
+        psim.Separator()
+        self._draw_global_param()
 
         # Finally refresh the canvas by rendering the next pass, if needed
         if self.live_update:
