@@ -40,15 +40,19 @@ class Playground:
 
         self.engine = Engine3DGRUT(gs_object, mesh_assets_folder, default_config)
         self.scene_mog = self.engine.scene_mog
+        
         self.primitives = self.engine.primitives
         self.video_recorder = self.engine.video_recorder
         self.video_h = 1080
         self.video_w = 1920
+        self.gaussian_position = torch.nn.Parameter(torch.zeros(3, device=self.engine.scene_mog.device), requires_grad=False)
+        self.gaussian_rotation = torch.nn.Parameter(torch.zeros(4, device=self.engine.scene_mog.device), requires_grad=False)
+        self.gaussian_scale = torch.nn.Parameter(torch.zeros(3, device=self.engine.scene_mog.device), requires_grad=False)
 
         """ When this flag is toggled on, the state of the canvas have changed and it needs to be re-rendered """
         self.is_running = True
         self.is_force_canvas_dirty = False
-        self.controller_type = 'Turntable'
+        self.controller_type = 'Free'
         self.gui_aux_fields = dict()
         self.density_buffer = copy.deepcopy(self.scene_mog.density)  # For slicing planes
         self.ps_buffer_mode = buffer_mode
@@ -813,7 +817,7 @@ class Playground:
             geom_idx = self.gui_aux_fields['add_geom_select_type']
             self.primitives.add_primitive(
                 geometry_type=available_geometries[geom_idx],
-                primitive_type=OptixPrimitiveTypes.GLASS,
+                primitive_type=OptixPrimitiveTypes.DIFFUSE,
                 device=self.scene_mog.device
             )
             self.primitives.rebuild_bvh_if_needed(True, True)
@@ -1048,6 +1052,93 @@ class Playground:
                 global_param[4] = torch.tensor(values, dtype=torch.float32)
 
             psim.PopItemWidth()
+    def _draw_gaussian_widget(self):
+        psim.SetNextItemOpen(True, psim.ImGuiCond_FirstUseEver)
+        if (psim.TreeNode("Gaussians")):
+            gaussian_positions = self.gaussian_position
+            gaussian_rotation = self.gaussian_rotation
+            gaussian_scale = self.gaussian_scale
+            transform_changed = False
+            position_changed = False
+            rotation_changed = False
+            scale_changed = False
+            psim.PushItemWidth(100)  # button_width
+            if psim.Button("Reset"):
+                gaussian_positions.reset()
+                gaussian_rotation.reset()
+                gaussian_scale.reset()
+                transform_changed = True
+                position_changed = True
+                rotation_changed = True
+            psim.PopItemWidth()
+
+            psim.PushItemWidth(350)
+            changed, values = psim.SliderFloat3(
+                "Translate",
+                [gaussian_positions[0], gaussian_positions[1], gaussian_positions[2]],
+                v_min=-5.0, v_max=5.0,
+                format="%.4f",
+                power=1.0
+            )
+            if changed:
+                prev_position = gaussian_positions.clone().detach()
+                gaussian_positions[0] = values[0]
+                gaussian_positions[1] = values[1]
+                gaussian_positions[2] = values[2]
+                transform_changed = True
+                position_changed = True
+
+            changed, values = psim.SliderFloat4(
+                "Rotate",
+                [gaussian_rotation[0], gaussian_rotation[1], gaussian_rotation[2], gaussian_rotation[3]],
+                v_min=-180.0, v_max=180.0,
+                format="%.3f",
+                power=1.0
+            )
+            if changed:
+                prev_rotation = gaussian_rotation.clone().detach()
+                gaussian_rotation[0] = values[0]
+                gaussian_rotation[1] = values[1]
+                gaussian_rotation[2] = values[2]
+                gaussian_rotation[3] = values[3]
+                transform_changed = True
+                rotation_changed = True
+
+            changed, values = psim.SliderFloat3(
+                "Scale",
+                [gaussian_scale[0], gaussian_scale[1], gaussian_scale[2]],
+                v_min=-5.0, v_max=5.0,
+                format="%.4f",
+                power=1.0
+            )
+            if changed:
+                prev_scale = gaussian_scale.clone().detach()
+                gaussian_scale[0] = values[0]
+                gaussian_scale[1] = values[1]
+                gaussian_scale[2] = values[2]
+                transform_changed = True
+                scale_changed = True
+            psim.PopItemWidth()
+
+            if transform_changed:
+                optimizable_tensors = {
+                    "positions": torch.nn.Parameter(self.scene_mog.positions.clone()),
+                    "rotation": torch.nn.Parameter(self.scene_mog.rotation.clone()),
+                    "scale": torch.nn.Parameter(self.scene_mog.scale.clone())
+                }
+                if position_changed:
+                    delta_gaussian_position = gaussian_positions - prev_position
+                    optimizable_tensors["positions"].data += delta_gaussian_position
+                if rotation_changed:
+                    delta_gaussian_rotation = gaussian_rotation - prev_rotation
+                    optimizable_tensors["rotation"].data += delta_gaussian_rotation
+                if scale_changed:
+                    delta_gaussian_scale = gaussian_scale - prev_scale
+                    optimizable_tensors["scale"].data += delta_gaussian_scale
+                self.scene_mog.update_optimizable_parameters(optimizable_tensors)
+                #self.scene_mog.build_acc()
+                self.engine.rebuild_bvh(self.scene_mog)
+                self.is_force_canvas_dirty = True
             psim.TreePop()
 
     @torch.cuda.nvtx.range("ps_ui_callback")
@@ -1064,6 +1155,8 @@ class Playground:
         self._draw_antialiasing_widget()
         psim.Separator()
         self._draw_depth_of_field_widget()
+        psim.Separator()
+        self._draw_gaussian_widget()
         psim.Separator()
         self._draw_materials_widget()
         psim.Separator()
