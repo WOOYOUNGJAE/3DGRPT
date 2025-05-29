@@ -198,10 +198,9 @@ extern "C" __global__ void __closesthit__ch()
         pPayload->emitted = make_float3( 0.0f );
 
     // reset seed, ray_dir&pos from hemisphere sampling
-    unsigned int seed = pPayload->rndSeed;
     {
-        const float z1 = rnd(seed);
-        const float z2 = rnd(seed);
+        const float z1 = rnd(rndSeed);
+        const float z2 = rnd(rndSeed);
 
         float3 w_in;
         PT::cosine_sample_hemisphere( z1, z2, w_in );
@@ -213,9 +212,9 @@ extern "C" __global__ void __closesthit__ch()
         pPayload->countEmitted = false;
     }
     
-    const float z1 = rnd(seed);
-    const float z2 = rnd(seed);
-    pPayload->rndSeed = seed;
+    const float z1 = rnd(rndSeed);
+    const float z2 = rnd(rndSeed);
+    pPayload->rndSeed = rndSeed;
 
     float3 lightV1 = params.lightV1;
     float3 lightV2 = params.lightV2;
@@ -260,12 +259,8 @@ extern "C" __global__ void __closesthit__ch()
     // Intersection point - also determines origin of next ray
     pPayload->t_hit = hit_t;
     // If ray has bounces remaining, update next ray orig and dir
-    pPayload->rayOri = ray_o + hit_t * ray_d;
-    pPayload->rayDir = new_ray_dir;
     // Output: Number of times face redirected
     pPayload->numBounces = numBounces;
-    // Update next seed if RNG was used
-    pPayload->rndSeed = rndSeed;
 
     // Output: Ray hit something so it is considered redirected (->Gaussians pass), or terminate
     setNextTraceState(PGRNDTraceTerminate);
