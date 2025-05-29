@@ -37,8 +37,8 @@ extern "C" __global__ void __raygen__rg() {
 
     const uint3 idx = optixGetLaunchIndex();
     const uint3 dim = optixGetLaunchDimensions();
-    float3 rayOrigin    = params.rayWorldOrigin(idx);
-    float3 rayDirection = params.rayWorldDirection(idx);
+    const float3 rayOriginFirst    = params.rayWorldOrigin(idx);
+    const float3 rayDirectionFirst = params.rayWorldDirection(idx);
     // Ray coordinates in pixels
     const int rx = fminf(idx.x, params.frameBounds.x);
     const int ry = fminf(idx.y, params.frameBounds.y);
@@ -48,7 +48,9 @@ extern "C" __global__ void __raygen__rg() {
     const int width   = params.width;
     const int height   = params.height;
 
-
+    float3 U = FLOAT4_TO_FLOAT3(params.rayToWorld[0]);
+    float3 V = FLOAT4_TO_FLOAT3(params.rayToWorld[1]);
+    float3 W = FLOAT4_TO_FLOAT3(params.rayToWorld[2]);
     
     float3 resultRGB = make_float3( 0.0f );
     int remaningSamples = SAMPLES_PER_LAUNCH;
@@ -62,23 +64,24 @@ extern "C" __global__ void __raygen__rg() {
         RayData rayData;
         rayData.initialize();
         payload.rayData = &rayData;
-        payload.rayOri = rayOrigin;
+        payload.rayOri = rayOriginFirst;
         int depth = 0;
+        float3 jitteredRayDir = rayDirectionFirst;
 
+        // const float2 subpixel_jitter = make_float2( rnd( seed )-0.5f, rnd( seed )-0.5f );
+        // const float2 d = 2.0f * make_float2(
+        //     ( static_cast<float>( idx.x ) + subpixel_jitter.x ) / static_cast<float>( width ), //width
+        //     ( static_cast<float>( idx.y ) + subpixel_jitter.y ) / static_cast<float>( height ) // height
+        //     ) - 1.0f;     
+        //     jitteredRayDir = safe_normalize(rayDirectionFirst 
+        //     + d.x * U
+        //     + d.y * V);
+        payload.rayDir = jitteredRayDir;
 
-        const float2 subpixel_jitter = make_float2( rnd( seed )-0.5f, rnd( seed )-0.5f );
-        const float2 d = 2.0f * make_float2(
-            ( static_cast<float>( idx.x ) + subpixel_jitter.x ) / static_cast<float>( width ),
-            ( static_cast<float>( idx.y ) + subpixel_jitter.y ) / static_cast<float>( height )
-            ) - 1.0f;     
-        // rayDirection = safe_normalize(make_float3(rayDirection.x * d.x, rayDirection.y * d.y, rayDirection.z));
-        payload.rayDir = rayDirection;
-
+        float3 rayOrigin;
         for( ;; )
         {
             PT::traceRadiance(
-                rayOrigin,
-                rayDirection,
                 0.01f,  // tmin       // TODO: smarter offset
                 ray_t_max,  // tmax
                 &payload );
@@ -88,10 +91,7 @@ extern "C" __global__ void __raygen__rg() {
                     
             if( payload.done  || depth >= 3 ) // TODO RR, variable for depth
                 break;
-
-            rayOrigin    = payload.rayOri;
-            rayDirection = payload.rayDir;
-
+                
             ++depth;
         }
     } while (--remaningSamples);

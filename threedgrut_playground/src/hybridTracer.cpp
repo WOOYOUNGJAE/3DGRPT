@@ -280,11 +280,12 @@ void HybridOptixTracer::syncMaterials(
 
 void HybridOptixTracer::syncGlobalVariables(PlaygroundPipelineParameters &params, const torch::Tensor &paramData)
 {
-    params.lightCorner = make_float3(paramData[0].item<float>(), paramData[1].item<float>(), paramData[2].item<float>());
-    params.lightV1 = make_float3(paramData[3].item<float>(), paramData[4].item<float>(), paramData[5].item<float>());
-    params.lightV2 = make_float3(paramData[6].item<float>(), paramData[7].item<float>(), paramData[8].item<float>());
-    params.lightNormal = make_float3(paramData[9].item<float>(), paramData[10].item<float>(), paramData[11].item<float>());
-    params.lightEmission = make_float3(paramData[12].item<float>(), paramData[13].item<float>(), paramData[14].item<float>());
+    params.lightCorner = make_float3(paramData[0][0].item<float>(), paramData[0][1].item<float>(), paramData[0][2].item<float>());
+    params.lightV1 = make_float3(paramData[1][0].item<float>(), paramData[1][1].item<float>(), paramData[1][2].item<float>());
+    params.lightV2 = make_float3(paramData[2][0].item<float>(), paramData[2][1].item<float>(), paramData[2][2].item<float>());
+    params.lightNormal = make_float3(paramData[3][0].item<float>(), paramData[3][1].item<float>(), paramData[3][2].item<float>());
+    params.lightEmission = make_float3(paramData[4][0].item<float>(), paramData[4][1].item<float>(), paramData[4][2].item<float>());
+
 }
 
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor> HybridOptixTracer::traceHybrid(
