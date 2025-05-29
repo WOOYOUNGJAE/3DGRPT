@@ -30,11 +30,11 @@ extern "C"
 #include <playground/kernels/cuda/traceExtend.cuh>
 #include <playground/kernels/cuda/materialsExtend.cuh>
 
-constexpr uint32_t MAX_BOUNCES = 32;           // Maximum number of mirror material bounces only (irrelevant to pbr)
-constexpr uint32_t TIMEOUT_ITERATIONS = 1000;  // Terminate ray after max iterations to avoid infinite loop
-constexpr float REFRACTION_EPS_SHIFT = 1e-5;   // Add eps amount to refracted rays pos to avoid repeated collisions
-constexpr float EPS_SHIFT_GS = 0.1f; // Add eps amount to secondary rays pos to avoid repeated collisions for Gaussian Tracing
-__constant__ float3 LIGHT_POS = {0.0f, -10.0f, 0.0f};
+// constexpr uint32_t MAX_BOUNCES = 32;           // Maximum number of mirror material bounces only (irrelevant to pbr)
+// constexpr uint32_t TIMEOUT_ITERATIONS = 1000;  // Terminate ray after max iterations to avoid infinite loop
+// constexpr float REFRACTION_EPS_SHIFT = 1e-5;   // Add eps amount to refracted rays pos to avoid repeated collisions
+// constexpr float EPS_SHIFT_GS = 0.1f; // Add eps amount to secondary rays pos to avoid repeated collisions for Gaussian Tracing
+// __constant__ float3 LIGHT_POS = {0.0f, -10.0f, 0.0f};
 
 #define USE_SHADOW 1
 #define USE_GS_SHADING 0
@@ -415,6 +415,9 @@ extern "C" __global__ void __miss__ms()
         setNextTraceState(PGRNDTraceRTLastGaussiansPass);
     }
 }
+extern "C" __global__ void __miss__occlusion__ms()
+{
 
+}
 #undef __PLAYGROUND__MODE__
 
