@@ -39,6 +39,9 @@
 //------------------------------------------------------------------------------
 //
 //------------------------------------------------------------------------------
+
+OptixCompileDebugLevel g_curCompileDebugLevel = OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL; // OPTIX_COMPILE_DEBUG_LEVEL_FULL; //OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL;
+OptixCompileOptimizationLevel g_curCompileOptLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3; // OPTIX_COMPILE_OPTIMIZATION_LEVEL_0;// OPTIX_COMPILE_OPTIMIZATION_LEVEL_3
 namespace {
 
 void contextLogCB(unsigned int level, const char* tag, const char* message, void* /*cbdata */) {
@@ -329,8 +332,8 @@ void OptixTracer::createPipeline(const OptixDeviceContext context,
     {
         OptixModuleCompileOptions module_compile_options = {};
         module_compile_options.maxRegisterCount          = OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT;
-        module_compile_options.optLevel                  = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3;
-        module_compile_options.debugLevel                = OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL;
+        module_compile_options.optLevel                  = g_curCompileOptLevel;
+        module_compile_options.debugLevel                = g_curCompileDebugLevel;
 
         pipeline_compile_options.usesMotionBlur                   = false;
         pipeline_compile_options.traversableGraphFlags            = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS;
@@ -431,11 +434,11 @@ void OptixTracer::createPipeline(const OptixDeviceContext context,
         program_groups.push_back(miss_prog_group);
         program_groups.push_back(hitgroup_prog_group);
 
-        // OptixProgramGroup program_groups[] = { raygen_prog_group, miss_prog_group, hitgroup_prog_group };
+        // OptixProgramGroup program_groups[] = { raygen_prog_group, miss_prog_group_arr, hitgroup_prog_group };
 
         OptixPipelineLinkOptions pipeline_link_options = {};
         pipeline_link_options.maxTraceDepth            = max_trace_depth;
-        pipeline_link_options.debugLevel               = OPTIX_COMPILE_DEBUG_LEVEL_DEFAULT;
+        pipeline_link_options.debugLevel               = g_curCompileDebugLevel;
         size_t sizeof_log                              = sizeof(log);
         OPTIX_CHECK_LOG(optixPipelineCreate(context, &pipeline_compile_options, &pipeline_link_options,
                                             program_groups.data(), static_cast<unsigned int>(program_groups.size()),
@@ -497,18 +500,19 @@ void OptixTracer::createPipeline(const OptixDeviceContext context,
     }
 }
 
-
 void OptixTracer::createPipeline_PathTracing(const OptixDeviceContext context, const std::string &path, const std::string &dependencies_path, const std::string &cuda_path, const std::vector<std::string> &defines, const std::string &kernel_name, uint32_t flags, OptixModule *module, OptixPipeline *pipeline, OptixShaderBindingTable &sbt, uint32_t numPayloadValues, const std::vector<std::string> &extra_includes)
 {
+    enum TRACING_TYPE {RADIANCE, OCCLUSION, TRACING_TYPE_NUM}; // radiance tracing, occlusion tracing type
     char log[2048];
+    size_t sizeof_log = sizeof(log);
 
     OptixPipelineCompileOptions pipeline_compile_options = {};
     OptixModule builtinIsModule                          = nullptr;
     {
         OptixModuleCompileOptions module_compile_options = {};
         module_compile_options.maxRegisterCount          = OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT;
-        module_compile_options.optLevel                  = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3;
-        module_compile_options.debugLevel                = OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL;
+        module_compile_options.optLevel                  = g_curCompileOptLevel;
+        module_compile_options.debugLevel                = g_curCompileDebugLevel;
 
         pipeline_compile_options.usesMotionBlur                   = false;
         pipeline_compile_options.traversableGraphFlags            = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS;
@@ -532,7 +536,6 @@ void OptixTracer::createPipeline_PathTracing(const OptixDeviceContext context, c
         const char* input = getInputData(shaderFile.c_str(), includeDir.c_str(), optix_include_dir.c_str(),
                                          cuda_include_dir.c_str(), kernel_name.c_str(), inputSize, defines,
                                          (const char**)&log, extra_includes);
-        size_t sizeof_log = sizeof(log);
 
         OPTIX_CHECK_LOG(optixModuleCreateFromPTX(
             context, &module_compile_options, &pipeline_compile_options, input, inputSize, log, &sizeof_log, module));
@@ -547,130 +550,86 @@ void OptixTracer::createPipeline_PathTracing(const OptixDeviceContext context, c
     // Create program groups
     //
     OptixProgramGroup raygen_prog_group   = nullptr;
-    OptixProgramGroup miss_prog_group     = nullptr;
-    OptixProgramGroup hitgroup_prog_group = nullptr;
+    OptixProgramGroup miss_prog_group_arr[TRACING_TYPE_NUM];
+    OptixProgramGroup hitgroup_prog_group_arr[TRACING_TYPE_NUM]{};
 
     {
         OptixProgramGroupOptions program_group_options = {}; // Initialize to zeros
 
+        // raygen program group
         OptixProgramGroupDesc raygen_prog_group_desc = {}; //
         raygen_prog_group_desc.kind                  = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
         if (flags & PipelineFlag_HasRG) {
             raygen_prog_group_desc.raygen.module            = *module;
             raygen_prog_group_desc.raygen.entryFunctionName = "__raygen__rg";
         }
-        size_t sizeof_log = sizeof(log);
         OPTIX_CHECK_LOG(optixProgramGroupCreate(context, &raygen_prog_group_desc,
                                                 1, // num program groups
                                                 &program_group_options, log, &sizeof_log, &raygen_prog_group));
-
-        OptixProgramGroupDesc miss_prog_group_desc = {};
-        miss_prog_group_desc.kind                  = OPTIX_PROGRAM_GROUP_KIND_MISS;
+        
+        // miss grogram groups (x2)
+        OptixProgramGroupDesc miss_prog_group_desc_arr[TRACING_TYPE_NUM]{};
+        miss_prog_group_desc_arr[TRACING_TYPE::RADIANCE].kind                  = OPTIX_PROGRAM_GROUP_KIND_MISS;
         if (flags & PipelineFlag_HasMS) {
-            miss_prog_group_desc.miss.module            = *module;
-            miss_prog_group_desc.miss.entryFunctionName = "__miss__ms";
+            miss_prog_group_desc_arr[TRACING_TYPE::RADIANCE].miss.module            = *module;
+            miss_prog_group_desc_arr[TRACING_TYPE::RADIANCE].miss.entryFunctionName = "__miss__ms";
         }
-        sizeof_log = sizeof(log);
-        OPTIX_CHECK_LOG(optixProgramGroupCreate(context, &miss_prog_group_desc,
-                                                1, // num program groups
-                                                &program_group_options, log, &sizeof_log, &miss_prog_group));
+        miss_prog_group_desc_arr[TRACING_TYPE::OCCLUSION] = miss_prog_group_desc_arr[TRACING_TYPE::RADIANCE];
+        if (flags & PipelineFlag_HasMS) {
+            miss_prog_group_desc_arr[TRACING_TYPE::OCCLUSION].miss.module            = *module;
+            miss_prog_group_desc_arr[TRACING_TYPE::OCCLUSION].miss.entryFunctionName = "__miss__occlusion__ms";
+        }
+        OPTIX_CHECK_LOG(optixProgramGroupCreate(context, miss_prog_group_desc_arr,
+                                                TRACING_TYPE_NUM, // num program groups
+                                                &program_group_options, log, &sizeof_log, miss_prog_group_arr));
 
-        OptixProgramGroupDesc hitgroup_prog_group_desc = {};
-        hitgroup_prog_group_desc.kind                  = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
+        // hit program groups (x2)
+        OptixProgramGroupDesc hitgroup_prog_group_desc_arr[TRACING_TYPE_NUM]{};
+        // for non-occlusion ray
+        hitgroup_prog_group_desc_arr[TRACING_TYPE::RADIANCE].kind                  = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
         if (flags & PipelineFlag_HasCH) {
-            hitgroup_prog_group_desc.hitgroup.moduleCH            = *module;
-            hitgroup_prog_group_desc.hitgroup.entryFunctionNameCH = "__closesthit__ch";
+             hitgroup_prog_group_desc_arr[TRACING_TYPE::RADIANCE].hitgroup.moduleCH            = *module;
+             hitgroup_prog_group_desc_arr[TRACING_TYPE::RADIANCE].hitgroup.entryFunctionNameCH = "__closesthit__ch";
         }
         if (flags & PipelineFlag_HasIS) {
-            hitgroup_prog_group_desc.hitgroup.moduleIS            = *module;
-            hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__is";
+             hitgroup_prog_group_desc_arr[TRACING_TYPE::RADIANCE].hitgroup.moduleIS            = *module;
+             hitgroup_prog_group_desc_arr[TRACING_TYPE::RADIANCE].hitgroup.entryFunctionNameIS = "__intersection__is";
         } else if (flags & PipelineFlag_SpherePrim) {
-            hitgroup_prog_group_desc.hitgroup.moduleIS            = builtinIsModule;
-            hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = nullptr;
+             hitgroup_prog_group_desc_arr[TRACING_TYPE::RADIANCE].hitgroup.moduleIS            = builtinIsModule;
+             hitgroup_prog_group_desc_arr[TRACING_TYPE::RADIANCE].hitgroup.entryFunctionNameIS = nullptr;
         }
         if (flags & PipelineFlag_HasAH) {
-            hitgroup_prog_group_desc.hitgroup.moduleAH            = *module;
-            hitgroup_prog_group_desc.hitgroup.entryFunctionNameAH = "__anyhit__ah";
+             hitgroup_prog_group_desc_arr[TRACING_TYPE::RADIANCE].hitgroup.moduleAH            = *module;
+             hitgroup_prog_group_desc_arr[TRACING_TYPE::RADIANCE].hitgroup.entryFunctionNameAH = "__anyhit__ah";
         }
-        sizeof_log = sizeof(log);
-        OPTIX_CHECK_LOG(optixProgramGroupCreate(context, &hitgroup_prog_group_desc,
-                                                1, // num program groups
-                                                &program_group_options, log, &sizeof_log, &hitgroup_prog_group));
-    }
-
-    // OcclusionHitGroup
-    OptixProgramGroup raygen_prog_group_occlusion   = nullptr;
-    OptixProgramGroup miss_prog_group_occlusion     = nullptr;
-    OptixProgramGroup hitgroup_prog_group_occlusion = nullptr;
-    {
-        OptixProgramGroupOptions program_group_options = {}; // Initialize to zeros
-
-        OptixProgramGroupDesc raygen_prog_group_desc = {}; //
-        raygen_prog_group_desc.kind                  = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
-        if (flags & PipelineFlag_HasRG) {
-            raygen_prog_group_desc.raygen.module            = *module;
-            raygen_prog_group_desc.raygen.entryFunctionName = "__raygen__rg";
-        }
-        size_t sizeof_log = sizeof(log);
-        OPTIX_CHECK_LOG(optixProgramGroupCreate(context, &raygen_prog_group_desc,
-                                                1, // num program groups
-                                                &program_group_options, log, &sizeof_log, &raygen_prog_group_occlusion));
-
-        OptixProgramGroupDesc miss_prog_group_desc = {};
-        miss_prog_group_desc.kind                  = OPTIX_PROGRAM_GROUP_KIND_MISS;
-        if (flags & PipelineFlag_HasMS) {
-            miss_prog_group_desc.miss.module            = *module;
-            miss_prog_group_desc.miss.entryFunctionName = "__miss__ms";
-        }
-        sizeof_log = sizeof(log);
-        OPTIX_CHECK_LOG(optixProgramGroupCreate(context, &miss_prog_group_desc,
-                                                1, // num program groups
-                                                &program_group_options, log, &sizeof_log, &miss_prog_group_occlusion));
-
-        OptixProgramGroupDesc hitgroup_prog_group_desc = {};
-        hitgroup_prog_group_desc.kind                  = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
+        // for occlusion ray
+        hitgroup_prog_group_desc_arr[TRACING_TYPE::OCCLUSION] = hitgroup_prog_group_desc_arr[TRACING_TYPE::RADIANCE];
         if (flags & PipelineFlag_HasCH) {
-            hitgroup_prog_group_desc.hitgroup.moduleCH            = *module;
-            hitgroup_prog_group_desc.hitgroup.entryFunctionNameCH = "__closesthit__occlusion__ch";
+             hitgroup_prog_group_desc_arr[TRACING_TYPE::OCCLUSION].hitgroup.moduleCH            = *module;
+             hitgroup_prog_group_desc_arr[TRACING_TYPE::OCCLUSION].hitgroup.entryFunctionNameCH = "__closesthit__occlusion__ch";
         }
-        if (flags & PipelineFlag_HasIS) {
-            hitgroup_prog_group_desc.hitgroup.moduleIS            = *module;
-            hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = "__intersection__is";
-        } else if (flags & PipelineFlag_SpherePrim) {
-            hitgroup_prog_group_desc.hitgroup.moduleIS            = builtinIsModule;
-            hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = nullptr;
-        }
-        if (flags & PipelineFlag_HasAH) {
-            hitgroup_prog_group_desc.hitgroup.moduleAH            = *module;
-            hitgroup_prog_group_desc.hitgroup.entryFunctionNameAH = "__anyhit__ah";
-        }
-        sizeof_log = sizeof(log);
-        OPTIX_CHECK_LOG(optixProgramGroupCreate(context, &hitgroup_prog_group_desc,
-                                                1, // num program groups
-                                                &program_group_options, log, &sizeof_log, &hitgroup_prog_group_occlusion));
+        OPTIX_CHECK_LOG(optixProgramGroupCreate(context, hitgroup_prog_group_desc_arr,
+                                                TRACING_TYPE_NUM, // num program groups
+                                                &program_group_options, log, &sizeof_log, hitgroup_prog_group_arr));
     }
+
     //
     // Link pipeline
     //
     {
-        const uint32_t max_trace_depth = 1;
+        const uint32_t max_trace_depth = 2;
 
         std::vector<OptixProgramGroup> program_groups;
         program_groups.push_back(raygen_prog_group);
-        program_groups.push_back(miss_prog_group);
-        program_groups.push_back(hitgroup_prog_group);
+        program_groups.push_back(miss_prog_group_arr[TRACING_TYPE::RADIANCE]);
+        program_groups.push_back(miss_prog_group_arr[TRACING_TYPE::OCCLUSION]);
+        program_groups.push_back(hitgroup_prog_group_arr[TRACING_TYPE::RADIANCE]);
+        program_groups.push_back(hitgroup_prog_group_arr[TRACING_TYPE::OCCLUSION]);
 
-        program_groups.push_back(raygen_prog_group_occlusion);
-        program_groups.push_back(miss_prog_group_occlusion);
-        program_groups.push_back(hitgroup_prog_group_occlusion);
-
-
-        // OptixProgramGroup program_groups[] = { raygen_prog_group, miss_prog_group, hitgroup_prog_group };
 
         OptixPipelineLinkOptions pipeline_link_options = {};
         pipeline_link_options.maxTraceDepth            = max_trace_depth;
-        pipeline_link_options.debugLevel               = OPTIX_COMPILE_DEBUG_LEVEL_DEFAULT;
-        size_t sizeof_log                              = sizeof(log);
+        pipeline_link_options.debugLevel               = g_curCompileDebugLevel;
         OPTIX_CHECK_LOG(optixPipelineCreate(context, &pipeline_compile_options, &pipeline_link_options,
                                             program_groups.data(), static_cast<unsigned int>(program_groups.size()),
                                             log, &sizeof_log, pipeline));
@@ -706,31 +665,33 @@ void OptixTracer::createPipeline_PathTracing(const OptixDeviceContext context, c
         CUDA_CHECK(
             cudaMemcpy(reinterpret_cast<void*>(raygen_record), &rg_sbt, raygen_record_size, cudaMemcpyHostToDevice));
 
-        CUdeviceptr miss_record;
+        CUdeviceptr miss_records;
         size_t miss_record_size = sizeof(MissSbtRecord);
-        CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&miss_record), miss_record_size));
-        MissSbtRecord ms_sbt;
-        OPTIX_CHECK(optixSbtRecordPackHeader(miss_prog_group, &ms_sbt));
-        CUDA_CHECK(cudaMemcpy(reinterpret_cast<void*>(miss_record), &ms_sbt, miss_record_size, cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&miss_records), miss_record_size * TRACING_TYPE_NUM));
+        MissSbtRecord ms_sbt_arr[TRACING_TYPE_NUM]{};
+        OPTIX_CHECK(optixSbtRecordPackHeader(miss_prog_group_arr[TRACING_TYPE::RADIANCE], &ms_sbt_arr[TRACING_TYPE::RADIANCE]));
+        OPTIX_CHECK(optixSbtRecordPackHeader(miss_prog_group_arr[TRACING_TYPE::OCCLUSION], &ms_sbt_arr[TRACING_TYPE::OCCLUSION]));
+        CUDA_CHECK(cudaMemcpy(
+            reinterpret_cast<void*>(miss_records), &ms_sbt_arr, miss_record_size * TRACING_TYPE_NUM, cudaMemcpyHostToDevice));
 
         CUdeviceptr hitgroup_records;
         size_t hitgroup_records_size = sizeof(HitGroupSbtRecord);
-        CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&hitgroup_records), hitgroup_records_size * 2));
+        CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&hitgroup_records), hitgroup_records_size * TRACING_TYPE_NUM));
 
-        HitGroupSbtRecord hg_sbt_arr[2];
-        OPTIX_CHECK(optixSbtRecordPackHeader(hitgroup_prog_group, &hg_sbt_arr[0]));
-        OPTIX_CHECK(optixSbtRecordPackHeader(hitgroup_prog_group_occlusion, &hg_sbt_arr[1]));
+        HitGroupSbtRecord hg_sbt_arr[TRACING_TYPE_NUM];
+        OPTIX_CHECK(optixSbtRecordPackHeader(hitgroup_prog_group_arr[TRACING_TYPE::RADIANCE], &hg_sbt_arr[TRACING_TYPE::RADIANCE]));
+        OPTIX_CHECK(optixSbtRecordPackHeader(hitgroup_prog_group_arr[TRACING_TYPE::OCCLUSION], &hg_sbt_arr[TRACING_TYPE::OCCLUSION]));
         
         CUDA_CHECK(cudaMemcpy(
-            reinterpret_cast<void*>(hitgroup_records), &hg_sbt_arr, hitgroup_records_size * 2, cudaMemcpyHostToDevice));
+            reinterpret_cast<void*>(hitgroup_records), &hg_sbt_arr, hitgroup_records_size * TRACING_TYPE_NUM, cudaMemcpyHostToDevice));
 
         sbt.raygenRecord                = raygen_record;
-        sbt.missRecordBase              = miss_record;
+        sbt.missRecordBase              = miss_records;
         sbt.missRecordStrideInBytes     = sizeof(MissSbtRecord);
-        sbt.missRecordCount             = 1;
+        sbt.missRecordCount             = TRACING_TYPE_NUM;
         sbt.hitgroupRecordBase          = hitgroup_records;
         sbt.hitgroupRecordStrideInBytes = sizeof(HitGroupSbtRecord);
-        sbt.hitgroupRecordCount         = 2;
+        sbt.hitgroupRecordCount         = TRACING_TYPE_NUM;
     }
 }
 

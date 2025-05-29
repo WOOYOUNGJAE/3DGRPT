@@ -56,7 +56,8 @@ HybridOptixTracer::HybridOptixTracer(
     bool particleKernelDensityClamping,
     int particleRadianceSphDegree,
     bool enableNormals,
-    bool enableHitCounts) : OptixTracer(threedgrtPath, cuda_path, pipeline, backwardPipeline, primitive,
+    bool enableHitCounts,
+    const std::string& kernelName) : OptixTracer(threedgrtPath, cuda_path, pipeline, backwardPipeline, primitive,
                                         particleKernelDegree, particleKernelMinResponse, particleKernelDensityClamping,
                                         particleRadianceSphDegree, enableNormals, enableHitCounts){
 
@@ -78,7 +79,7 @@ HybridOptixTracer::HybridOptixTracer(
     _playgroundState->pipelineTriGSTracing = nullptr;
     _playgroundState->sbtTriGSTracing = {};
     createPipeline_PathTracing(
-        _playgroundState->context, playgroundPath, threedgrtPath, cuda_path, defines, "playgroundKernel",
+        _playgroundState->context, playgroundPath, threedgrtPath, cuda_path, defines, kernelName, // "hybridPTKernel"/*TODO Temp, playgroundKernel*/,
         sharedFlags | PipelineFlag_HasRG | PipelineFlag_HasCH | PipelineFlag_HasAH | PipelineFlag_HasMS,
         &_playgroundState->moduleTriGSTracing,
         &_playgroundState->pipelineTriGSTracing,
@@ -277,6 +278,16 @@ void HybridOptixTracer::syncMaterials(
     }
 }
 
+void HybridOptixTracer::syncGlobalVariables(PlaygroundPipelineParameters &params, const torch::Tensor &paramData)
+{
+    params.lightCorner = make_float3(paramData[0][0].item<float>(), paramData[0][1].item<float>(), paramData[0][2].item<float>());
+    params.lightV1 = make_float3(paramData[1][0].item<float>(), paramData[1][1].item<float>(), paramData[1][2].item<float>());
+    params.lightV2 = make_float3(paramData[2][0].item<float>(), paramData[2][1].item<float>(), paramData[2][2].item<float>());
+    params.lightNormal = make_float3(paramData[3][0].item<float>(), paramData[3][1].item<float>(), paramData[3][2].item<float>());
+    params.lightEmission = make_float3(paramData[4][0].item<float>(), paramData[4][1].item<float>(), paramData[4][2].item<float>());
+
+}
+
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor> HybridOptixTracer::traceHybrid(
     uint32_t frameNumber,
     torch::Tensor rayToWorld,
@@ -371,6 +382,10 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
         paramsHost.envmap = cuEnvMap.tex();
     }
 
+    // youngjae added
+    paramsHost.width = rayRad.size(2);
+    paramsHost.height = rayRad.size(1);
+
     cudaStream_t cudaStream = at::cuda::getCurrentCUDAStream();
 
     syncMaterials(paramsHost, materials, cudaStream);
@@ -401,7 +416,111 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
     return std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>(rayRad, rayDns, rayHit, rayNrm, rayHitsCount);
 }
 
-torch::Tensor HybridOptixTracer::denoise(torch::Tensor rayRad) {
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor> HybridOptixTracer::traceHybrid_PathTracing(uint32_t frameNumber, torch::Tensor rayToWorld, torch::Tensor rayOri, torch::Tensor rayDir, torch::Tensor particleDensity, torch::Tensor particleRadiance, int sphDegree, float minTransmittance, torch::Tensor rayMaxT, uint32_t playgroundOpts, torch::Tensor triangles, torch::Tensor vNormals, torch::Tensor vTangents, torch::Tensor vHasTangents, torch::Tensor primType, torch::Tensor matUV, torch::Tensor matID, const std::vector<CPBRMaterial> &materials, bool shouldSyncMaterials, torch::Tensor refractiveIndex, torch::Tensor backgroundColor, torch::Tensor envmap, torch::Tensor paramData, bool enableEnvmap, bool useEnvmapAsBackground, const unsigned int maxPBRBounces)
+{    
+    // ----- 3dgrt launch params -----
+    const torch::TensorOptions opts = torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA);
+    const torch::TensorOptions int_opts = torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA);
+    torch::Tensor rayRad = torch::empty({rayOri.size(0), rayOri.size(1), rayOri.size(2), 3}, opts);
+    torch::Tensor rayDns = torch::empty({rayOri.size(0), rayOri.size(1), rayOri.size(2), 1}, opts);
+    torch::Tensor rayHit = torch::empty({rayOri.size(0), rayOri.size(1), rayOri.size(2), 2}, opts);
+    torch::Tensor rayNrm = torch::empty({rayOri.size(0), rayOri.size(1), rayOri.size(2), 1}, opts);
+    torch::Tensor rayHitsCount = torch::zeros({rayOri.size(0), rayOri.size(1), rayOri.size(2), 1}, opts);
+    torch::Tensor traceState = torch::zeros({rayOri.size(0), rayOri.size(1), rayOri.size(2), 1}, int_opts);
+
+    PlaygroundPipelineParameters paramsHost;
+    paramsHost.handle = _state->gasHandle;
+    paramsHost.aabb = _state->gasAABB;
+
+    paramsHost.frameBounds.x = rayOri.size(2) - 1;
+    paramsHost.frameBounds.y = rayOri.size(1) - 1;
+    paramsHost.frameNumber = frameNumber;
+    paramsHost.gPrimNumTri = _state->gPrimNumTri;
+
+    paramsHost.minTransmittance = minTransmittance;
+    paramsHost.hitMinGaussianResponse = _state->particleKernelMinResponse;
+    paramsHost.alphaMinThreshold = 1.0f / 255.0f;
+    paramsHost.sphDegree = sphDegree;
+
+    std::memcpy(&paramsHost.rayToWorld[0].x, rayToWorld.cpu().data_ptr<float>(), 3 * sizeof(float4));
+    paramsHost.rayOrigin    = packed_accessor32<float, 4>(rayOri);
+    paramsHost.rayDirection = packed_accessor32<float, 4>(rayDir);
+
+    paramsHost.particleDensity      = getPtr<const ParticleDensity>(particleDensity);
+    paramsHost.particleRadiance     = getPtr<const float>(particleRadiance);
+    paramsHost.particleExtendedData = reinterpret_cast<const void*>(_state->gPipelineParticleData);
+
+    paramsHost.rayRadiance    = packed_accessor32<float, 4>(rayRad);
+    paramsHost.rayDensity     = packed_accessor32<float, 4>(rayDns);
+    paramsHost.rayHitDistance = packed_accessor32<float, 4>(rayHit);
+    paramsHost.rayNormal      = packed_accessor32<float, 4>(rayNrm);
+    paramsHost.rayHitsCount   = packed_accessor32<float, 4>(rayHitsCount);
+
+    // ----- Playground launch params -----
+    paramsHost.rayMaxT = packed_accessor32<float, 3>(rayMaxT);
+    paramsHost.triangles = packed_accessor32<int32_t, 2>(triangles);
+    paramsHost.vNormals = packed_accessor32<float, 2>(vNormals);
+    paramsHost.vTangents = packed_accessor32<float, 2>(vTangents);
+    paramsHost.vHasTangents = packed_accessor32<bool, 2>(vHasTangents);
+    paramsHost.primType = packed_accessor32<int32_t, 2>(primType);
+    paramsHost.matUV = packed_accessor32<float, 3>(matUV);
+    paramsHost.matID =  packed_accessor32<int32_t, 2>(matID);
+    paramsHost.refractiveIndex = packed_accessor32<float, 2>(refractiveIndex);
+    paramsHost.maxPBRBounces = maxPBRBounces;
+    paramsHost.playgroundOpts = playgroundOpts;
+    paramsHost.triHandle = _playgroundState->gasHandle;
+    paramsHost.trace_state = packed_accessor32<int32_t, 4>(traceState);
+    paramsHost.backgroundColor = make_float3(
+        backgroundColor[0].item<float>(), backgroundColor[1].item<float>(), backgroundColor[2].item<float>()
+    );
+    paramsHost.useEnvmap = false;
+    paramsHost.useEnvmapAsBackground = useEnvmapAsBackground;
+    int envmapHeight = envmap.size(0);
+    int envmapWidth = envmap.size(1);
+    CudaTexture2DFloat4Object cuEnvMap = CudaTexture2DFloat4Object();
+    if (envmapHeight > 0 && envmapWidth > 0)
+    {
+        cuEnvMap.reset(envmap.data_ptr<float>(), envmapHeight, envmapWidth);
+        paramsHost.useEnvmap = enableEnvmap;
+        paramsHost.envmap = cuEnvMap.tex();
+    }
+
+    // youngjae added
+    paramsHost.width = rayRad.size(2);
+    paramsHost.height = rayRad.size(1);
+    syncGlobalVariables(paramsHost, paramData);
+
+    cudaStream_t cudaStream = at::cuda::getCurrentCUDAStream();
+
+    syncMaterials(paramsHost, materials, cudaStream);
+    unsigned int numMaterials = materials.size();
+    CUDA_CHECK(cudaMallocAsync(
+        reinterpret_cast<void**>(&paramsHost.materials), sizeof(PBRMaterial) * numMaterials, cudaStream)
+    );
+    CUDA_CHECK(cudaMemcpyAsync(
+        reinterpret_cast<void*>(paramsHost.materials), _playgroundState->materials.data(), sizeof(PBRMaterial) * numMaterials, cudaMemcpyHostToDevice, cudaStream)
+    );
+    paramsHost.numMaterials = numMaterials;
+
+    reallocatePlaygroundParamsDevice(sizeof(paramsHost), cudaStream);
+    CUDA_CHECK(cudaMemcpyAsync(
+        reinterpret_cast<void *>(_playgroundState->paramsDevice), &paramsHost, sizeof(paramsHost), cudaMemcpyHostToDevice, cudaStream)
+    );
+
+    OPTIX_CHECK(optixLaunch(_playgroundState->pipelineTriGSTracing,
+                        cudaStream, _playgroundState->paramsDevice,
+                        sizeof(PlaygroundPipelineParameters), &_playgroundState->sbtTriGSTracing,
+                        rayRad.size(2),
+                        rayRad.size(1),
+                        rayRad.size(0)
+    ));
+
+    CUDA_CHECK_LAST();
+
+    return std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>(rayRad, rayDns, rayHit, rayNrm, rayHitsCount);
+}
+torch::Tensor HybridOptixTracer::denoise(torch::Tensor rayRad)
+{
 
     cudaStream_t cudaStream = at::cuda::getCurrentCUDAStream();
     const torch::TensorOptions opts = torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA);

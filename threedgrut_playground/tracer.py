@@ -20,7 +20,7 @@ import torch
 import torch.utils.cpp_extension
 
 logger = logging.getLogger(__name__)
-
+is_path_tracing = True
 
 # ----------------------------------------------------------------------------
 #
@@ -59,6 +59,20 @@ class Tracer:
         playground_module_path = os.path.dirname(__file__)
         threedgrt_tracer_module_path = os.path.abspath(os.path.join(playground_module_path, '..', 'threedgrt_tracer'))
 
+        self.pipeline_global_param = torch.tensor([
+            [-4.0, 2.245, 9.0],   # LIGHT_CORNER
+            [2.0, 0.0, -2.0],     # LIGHT_V1
+            [2.0, 0.0, 2.0],      # LIGHT_V2
+            [0.0, 0.0, -1.0],     # LIGHT_NORMAL
+            [200.0, 200.0, 200.0] # LIGHT_EMISSION
+        ], dtype=torch.float32)
+
+        if (is_path_tracing):
+            self.kernel_name = "hybridPTKernel"
+        else:
+            self.kernel_name = "playgroundKernel"
+
+        logger.info(f'🔆 Current Kernel Name: "{self.kernel_name}"')
         self.tracer_wrapper = _playground_plugin.HybridOptixTracer(
             threedgrt_tracer_module_path,
             playground_module_path,
@@ -72,6 +86,7 @@ class Tracer:
             self.conf.render.particle_radiance_sph_degree,
             self.conf.render.enable_normals,
             self.conf.render.enable_hitcounts,
+            self.kernel_name
         )
 
     def build_gs_acc(self, gaussians, rebuild=True):
@@ -247,13 +262,41 @@ class Tracer:
             sph_degree = gaussians.n_active_features
             min_transmittance = self.conf.render.min_transmittance
 
+
             (
                 pred_rgb,
                 pred_opacity,
                 pred_dist,
                 pred_normals,
                 hits_count
-            ) = self.tracer_wrapper.trace_hybrid(
+            ) = ((self.tracer_wrapper.trace_hybrid_pathtracing(
+                frame_id,
+                poses,
+                ray_o,
+                ray_d,
+                particle_density,
+                features,
+                sph_degree,
+                min_transmittance,
+                ray_max_t,
+                playground_opts,
+                mesh_faces,
+                vertex_normals,
+                vertex_tangents,
+                vertex_tangents_mask,
+                primitive_type,
+                material_uv,
+                material_id,
+                materials,
+                is_sync_materials,
+                refractive_index,
+                background_color,
+                envmap,
+                self.pipeline_global_param,
+                enable_envmap,
+                use_envmap_as_background,
+                max_pbr_bounces
+            ))) if (is_path_tracing) else (self.tracer_wrapper.trace_hybrid(
                 frame_id,
                 poses,
                 ray_o,
@@ -279,7 +322,7 @@ class Tracer:
                 enable_envmap,
                 use_envmap_as_background,
                 max_pbr_bounces
-            )
+            ))
 
             pred_dist = pred_dist[:, :, :, 0:1]  # return only the hit distance
 

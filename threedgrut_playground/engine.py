@@ -723,8 +723,18 @@ class Engine3DGRUT:
             device=self.device
         )
         self.primitives.add_primitive(
-            geometry_type='Sphere', primitive_type=OptixPrimitiveTypes.DIFFUSE, device=self.device
+            geometry_type='Cornell_box_simple', primitive_type=OptixPrimitiveTypes.DIFFUSE, device=self.device
         )
+        custom_object = self.primitives.objects['Cornell_box_simple 1']
+        if (custom_object is not None):
+            custom_object.transform.tx = -4.0
+            custom_object.transform.ty = 2.245
+            custom_object.transform.tz = 3.78
+            custom_object.transform.sx = 5.0
+            custom_object.transform.sy = 5.0
+            custom_object.transform.sz = 5.0
+            
+        # self.primitives.objects
         self.rebuild_bvh(self.scene_mog)
         if self.envmap is not None:
             self.force_white_bg = False
