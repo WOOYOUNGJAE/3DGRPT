@@ -27,7 +27,7 @@
 // clang-format off
 #include <3dgrt/kernels/slang/gaussianParticles.cuh>
 // clang-format on
-
+#define ENABLE_NORMALS
 struct RayHit {
     unsigned int particleId;
     float distance;
