@@ -188,7 +188,7 @@ extern "C" __global__ void __closesthit__ch()
     else // Gaussian is Closer
     {
         ray_hitPos = ray_o + gaussianClosestHit_t * ray_d;
-        hitNormal = safe_normalize(pPayload->rayData->normal);
+        hitNormal = (pPayload->rayData->normal);
         hitRGB = volRadiance;
     }
 
@@ -224,7 +224,7 @@ extern "C" __global__ void __closesthit__ch()
     float occlusionRayMax = length(L);
     L = safe_normalize(L);
     const float nDl = dot( hitNormal, L );
-    const float LnDl = 1.f; // TODO : -dot( light.normal, L );
+    const float LnDl = -dot( params.lightNormal, L );//1.f; // TODO : -dot( light.normal, L );
     
     float weight = 0.0f;
     if (nDl > 0.f && LnDl > 0.f) // ready to trace occlusion
