@@ -11,7 +11,7 @@ constexpr uint32_t MAX_BOUNCES = 32;           // Maximum number of mirror mater
 constexpr uint32_t TIMEOUT_ITERATIONS = 1000;  // Terminate ray after max iterations to avoid infinite loop
 constexpr float REFRACTION_EPS_SHIFT = 1e-5;   // Add eps amount to refracted rays pos to avoid repeated collisions
 
-constexpr float EPS_SHIFT_GS = 0.5f; // Add eps amount to secondary rays pos to avoid repeated collisions for Gaussian Tracing
+constexpr float EPS_SHIFT_GS = 0.1f; // Add eps amount to secondary rays pos to avoid repeated collisions for Gaussian Tracing
 constexpr float TRACE_MAX = 1e5;
 __constant__ float3 LIGHT_POS = {-3.35f, 0.99f, 7.67f}; // only for point light
 __constant__ float3 LIGHT_CORNER = {-4.0f, 2.245f, 9.f}; // cornell box : -4, 2.245, 3.78
@@ -287,7 +287,7 @@ static __device__ __forceinline__ unsigned int traceOcclusion(const float3 rayOr
         params.handle,
         rayOri,
         rayDir,
-        TRACE_MESH_TMIN,
+        EPS_SHIFT_GS,
         rayMax, 0.0f,                // rayTime
         OptixVisibilityMask( 255 ),
         OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT | OPTIX_RAY_FLAG_DISABLE_ANYHIT,

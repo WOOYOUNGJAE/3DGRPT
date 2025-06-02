@@ -87,7 +87,7 @@ extern "C" __global__ void __raygen__rg() {
                 &payload );
 
             resultRGB += payload.emitted;
-            resultRGB += payload.ptRadiance/*weight*/ * payload.attenuationRGB/*mesh color or gaussian color*/;
+            resultRGB += payload.ptRadiance * payload.attenuationRGB;
 
 
             if( payload.done || --depthLeft <= 0 ) // TODO RR, variable for depth
@@ -163,7 +163,6 @@ extern "C" __global__ void __closesthit__ch()
     const float3 triDiffuse = get_pure_diffuse();
 
     // Ready for tracing Gaussians
-    float3 new_ray_dir = make_float3(0.0, 0.0, 0.0);
     next_render_pass = PGRNDTraceRTGaussiansPass;
     const float3 ray_o = pPayload->rayOri;       // Ray origin, when ray intersected the surface
     const float3 ray_d = pPayload->rayDir;    // Ray direction, when ray intersected the surface
@@ -221,13 +220,15 @@ extern "C" __global__ void __closesthit__ch()
 
 
     float3 L = curLightPos - ray_hitPos;
+    // L = params.lightCorner - ray_hitPos; // non-area light
     float occlusionRayMax = length(L);
     L = safe_normalize(L);
     const float nDl = dot( hitNormal, L );
-    const float LnDl = -dot( params.lightNormal, L );//1.f; // TODO : -dot( light.normal, L );
+    const float LnDl = 1.f; // TODO : -dot( light.normal, L );
     
     float weight = 0.0f;
-    if (nDl > 0.f && LnDl > 0.f) // ready to trace occlusion
+    // if (1) // ready to trace occlusion
+    if ((nDl > 0.f && LnDl > 0.f) || !meshIsCloser) // ready to trace occlusion
     {
         // TRACE OCCLUSION
         // ray start pos
@@ -237,7 +238,7 @@ extern "C" __global__ void __closesthit__ch()
         unsigned int is_occluded = traceOcclusion(
             occlusion_ray_o,
             L,
-            occlusionRayMax - 0.01f  // tmax
+            occlusionRayMax - EPS_SHIFT_GS  // tmax
             );
 
         if( !is_occluded )
@@ -260,7 +261,9 @@ extern "C" __global__ void __closesthit__ch()
     
     if (pPayload->countEmitted && meshIsCloser == false)
     {
-        pPayload->ptRadiance = make_float3(params.customFloat3.z);
+        if (weight != 0.f) weight = 1.f;
+        pPayload->ptRadiance = make_float3(params.customFloat3.z) * weight;
+        pPayload->done = 1;
     }
 
     pPayload->countEmitted = false;
