@@ -11,7 +11,7 @@ constexpr uint32_t MAX_BOUNCES = 32;           // Maximum number of mirror mater
 constexpr uint32_t TIMEOUT_ITERATIONS = 1000;  // Terminate ray after max iterations to avoid infinite loop
 constexpr float REFRACTION_EPS_SHIFT = 1e-5;   // Add eps amount to refracted rays pos to avoid repeated collisions
 
-constexpr float EPS_SHIFT_GS = 0.1f; // Add eps amount to secondary rays pos to avoid repeated collisions for Gaussian Tracing
+constexpr float EPS_SHIFT_GS = 0.5f; // Add eps amount to secondary rays pos to avoid repeated collisions for Gaussian Tracing
 constexpr float TRACE_MAX = 1e5;
 __constant__ float3 LIGHT_POS = {-3.35f, 0.99f, 7.67f}; // only for point light
 __constant__ float3 LIGHT_CORNER = {-4.0f, 2.245f, 9.f}; // cornell box : -4, 2.245, 3.78
@@ -40,10 +40,10 @@ static __device__ __inline__ float traceVolumetricGS_outDist(
     const float tmin,
     const float tmax) {
     bool isFirstLoop = true;
-    float outDistance = -1.f;
+    float outDistance = TRACE_MAX;
     const uint3 idx = optixGetLaunchIndex();
     if ((idx.x > params.frameBounds.x) || (idx.y > params.frameBounds.y)) {
-        return -1.f;
+        return TRACE_MAX;
     }
 
     float rayTransmittance = 1.0f - rayData.density;
@@ -384,7 +384,7 @@ namespace PT
     static __device__ __forceinline__ unsigned int traceRadiance(const float rayMin, const float rayMax, PT::RayPayload* pPayload)
     {
         unsigned int timeout = 0;
-    
+        float3 lightEmission = make_float3(params.customFloat3.x);
         // Termination criteria:
         // 1. Ray missed surface (ray dir is 0), or
         // 2. PBR Materials: No remaining bounces, or
@@ -475,7 +475,7 @@ namespace PT
                 }
                 
                 pPayload->attenuationRGB *= (volRadiance * volAlpha); // Apply volRadiance(as diffuse of gaussian) to attenuation
-                pPayload->ptRadiance += params.lightEmission * weight;
+                pPayload->ptRadiance += lightEmission * weight;
                 pPayload->accumulatedAlpha += volAlpha;
 
                 setNextTraceState(PGRNDTraceTerminate);

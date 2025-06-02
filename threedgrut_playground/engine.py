@@ -729,7 +729,7 @@ class Engine3DGRUT:
         if (custom_object is not None):
             custom_object.transform.tx = -4.0
             custom_object.transform.ty = 2.245
-            custom_object.transform.tz = 3.78
+            custom_object.transform.tz = 4.3#3.78
             custom_object.transform.sx = 5.0
             custom_object.transform.sy = 5.0
             custom_object.transform.sz = 5.0

@@ -1040,13 +1040,22 @@ class Playground:
             if changed:
                 global_param[3] = torch.tensor(values, dtype=torch.float32)
 
-            # LIGHT_EMISSION
-            changed, values = psim.SliderFloat3(
-                "Light Emission",
+            # # LIGHT_EMISSION
+            # changed, values = psim.SliderFloat3(
+            #     "Light Emission",
+            #     global_param[4].tolist(),
+            #     v_min=0.0, v_max=150.0,
+            #     format="%.1f",
+            #     power=1.0
+            # )
+            # if changed:
+            #     global_param[4] = torch.tensor(values, dtype=torch.float32)
+
+            # Custom Float3
+            changed, values = psim.InputFloat3(
+                "Custom Float3",
                 global_param[4].tolist(),
-                v_min=0.0, v_max=1000.0,
-                format="%.1f",
-                power=1.0
+                format="%.1f"
             )
             if changed:
                 global_param[4] = torch.tensor(values, dtype=torch.float32)
