@@ -65,7 +65,7 @@ extern "C" __global__ void __raygen__rg() {
         rayData.initialize();
         payload.rayData = &rayData;
         payload.rayOri = rayOriginFirst;
-        int depth = 0;
+        int depthLeft = static_cast<int>(params.customFloat3.y);
         float3 jitteredRayDir = rayDirectionFirst;
 
         // const float2 subpixel_jitter = make_float2( rnd( seed )-0.5f, rnd( seed )-0.5f );
@@ -87,12 +87,12 @@ extern "C" __global__ void __raygen__rg() {
                 &payload );
 
             resultRGB += payload.emitted;
-            resultRGB += payload.ptRadiance * payload.attenuationRGB;
-                    
-            if( payload.done  || depth >= 3 ) // TODO RR, variable for depth
+            resultRGB += payload.ptRadiance/*weight*/ * payload.attenuationRGB/*mesh color or gaussian color*/;
+
+
+            if( payload.done || --depthLeft <= 0 ) // TODO RR, variable for depth
                 break;
-                
-            ++depth;
+
         }
     } while (--remaningSamples);
     
@@ -145,6 +145,7 @@ extern "C" __global__ void __closesthit__occlusion__ch()
 
 extern "C" __global__ void __closesthit__ch()
 {
+    float3 lightEmission = make_float3(params.customFloat3.x);
     // Only for MESH
 
     // Read inputs off payload
@@ -164,8 +165,8 @@ extern "C" __global__ void __closesthit__ch()
     // Ready for tracing Gaussians
     float3 new_ray_dir = make_float3(0.0, 0.0, 0.0);
     next_render_pass = PGRNDTraceRTGaussiansPass;
-    const float3 ray_o = optixGetWorldRayOrigin();       // Ray origin, when ray intersected the surface
-    const float3 ray_d = optixGetWorldRayDirection();    // Ray direction, when ray intersected the surface
+    const float3 ray_o = pPayload->rayOri;       // Ray origin, when ray intersected the surface
+    const float3 ray_d = pPayload->rayDir;    // Ray direction, when ray intersected the surface
     float hit_t = optixGetRayTmax();                     // t when ray intersected the surface
 
     // TODO Later: Assumed intersected_type == PGRNDPrimitiveDiffuse
@@ -187,8 +188,8 @@ extern "C" __global__ void __closesthit__ch()
     else // Gaussian is Closer
     {
         ray_hitPos = ray_o + gaussianClosestHit_t * ray_d;
-        hitNormal = pPayload->rayData->normal;
-        hitRGB = volRadiance; // Apply volRadiance(as diffuse of gaussian) to attenuation
+        hitNormal = safe_normalize(pPayload->rayData->normal);
+        hitRGB = volRadiance;
     }
 
     // Add object's emission color once
@@ -208,8 +209,6 @@ extern "C" __global__ void __closesthit__ch()
         onb.inverse_transform( w_in );
         pPayload->rayDir = w_in;
         pPayload->rayOri = ray_hitPos;
-
-        pPayload->countEmitted = false;
     }
     
     const float z1 = rnd(rndSeed);
@@ -233,7 +232,7 @@ extern "C" __global__ void __closesthit__ch()
         // TRACE OCCLUSION
         // ray start pos
         float3 occlusion_ray_o = meshIsCloser ? 
-        (ray_hitPos + hitNormal * TRACE_MESH_TMIN) : (ray_hitPos + L * EPS_SHIFT_GS);
+        (ray_hitPos + L * TRACE_MESH_TMIN) : (ray_hitPos + L * EPS_SHIFT_GS);
         
         unsigned int is_occluded = traceOcclusion(
             occlusion_ray_o,
@@ -247,13 +246,10 @@ extern "C" __global__ void __closesthit__ch()
             weight = nDl * LnDl * A / (M_PIf * occlusionRayMax * occlusionRayMax);
         }
     }
-
     // process color info
-
-
     pPayload->accumulatedAlpha += 1.f; // Assume this is diffuse
     pPayload->attenuationRGB *= hitRGB;
-    pPayload->ptRadiance += params.lightEmission * weight;
+    pPayload->ptRadiance += lightEmission * weight;
 
     // -- Write outputs to pPayload --
     // Intersection point - also determines origin of next ray
@@ -261,7 +257,13 @@ extern "C" __global__ void __closesthit__ch()
     // If ray has bounces remaining, update next ray orig and dir
     // Output: Number of times face redirected
     pPayload->numBounces = numBounces;
+    
+    if (pPayload->countEmitted && meshIsCloser == false)
+    {
+        pPayload->ptRadiance = make_float3(params.customFloat3.z);
+    }
 
+    pPayload->countEmitted = false;
     // Output: Ray hit something so it is considered redirected (->Gaussians pass), or terminate
     setNextTraceState(PGRNDTraceTerminate);
 }
