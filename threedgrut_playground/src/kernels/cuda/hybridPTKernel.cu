@@ -87,7 +87,7 @@ extern "C" __global__ void __raygen__rg() {
                 &payload );
 
             resultRGB += payload.emitted;
-            resultRGB += payload.ptRadiance/*weight*/ * payload.attenuationRGB/*mesh color or gaussian color*/;
+            resultRGB += payload.ptRadiance * payload.attenuationRGB;
 
 
             if( payload.done || --depthLeft <= 0 ) // TODO RR, variable for depth
@@ -163,7 +163,6 @@ extern "C" __global__ void __closesthit__ch()
     const float3 triDiffuse = get_pure_diffuse();
 
     // Ready for tracing Gaussians
-    float3 new_ray_dir = make_float3(0.0, 0.0, 0.0);
     next_render_pass = PGRNDTraceRTGaussiansPass;
     const float3 ray_o = pPayload->rayOri;       // Ray origin, when ray intersected the surface
     const float3 ray_d = pPayload->rayDir;    // Ray direction, when ray intersected the surface
@@ -188,7 +187,11 @@ extern "C" __global__ void __closesthit__ch()
     else // Gaussian is Closer
     {
         ray_hitPos = ray_o + gaussianClosestHit_t * ray_d;
-        hitNormal = (pPayload->rayData->normal);
+        hitNormal = safe_normalize(pPayload->rayData->normal);
+        if (length(hitNormal) == 0.f)
+        {
+            hitNormal = make_float3(0,0,1);
+        }
         hitRGB = volRadiance;
     }
 
@@ -221,13 +224,18 @@ extern "C" __global__ void __closesthit__ch()
 
 
     float3 L = curLightPos - ray_hitPos;
+    if (params.onOffFloat3.x == 1.f) // area Light
+        L = curLightPos - ray_hitPos;
+    else if (params.onOffFloat3.x == 0.f)
+        L = params.lightCorner - ray_hitPos; // non-area light
+
     float occlusionRayMax = length(L);
     L = safe_normalize(L);
     const float nDl = dot( hitNormal, L );
-    const float LnDl = -dot( params.lightNormal, L );//1.f; // TODO : -dot( light.normal, L );
+    const float LnDl = 1.f; // TODO : -dot( light.normal, L );
     
     float weight = 0.0f;
-    if (nDl > 0.f && LnDl > 0.f) // ready to trace occlusion
+    if ((!meshIsCloser) || (nDl > 0.f && LnDl > 0.f)) // ready to trace occlusion
     {
         // TRACE OCCLUSION
         // ray start pos
@@ -237,7 +245,7 @@ extern "C" __global__ void __closesthit__ch()
         unsigned int is_occluded = traceOcclusion(
             occlusion_ray_o,
             L,
-            occlusionRayMax - 0.01f  // tmax
+            occlusionRayMax - EPS_SHIFT_GS  // tmax
             );
 
         if( !is_occluded )
@@ -260,7 +268,14 @@ extern "C" __global__ void __closesthit__ch()
     
     if (pPayload->countEmitted && meshIsCloser == false)
     {
-        pPayload->ptRadiance = make_float3(params.customFloat3.z);
+        if (weight != 0.f) weight = 1.f;
+        // if (weight > 0.f) weight = 1.f;
+        pPayload->ptRadiance = make_float3(params.customFloat3.z) * weight;
+
+        if (params.onOffFloat3.y == 1.f)  // Use Secondary ray on gaussian
+            pPayload->done = static_cast<unsigned int>((params.customFloat3.y - 1) == 0);
+        else if (params.onOffFloat3.y == 0.f) // Use only Primary ray on Gaussian
+            pPayload->done = 1;
     }
 
     pPayload->countEmitted = false;

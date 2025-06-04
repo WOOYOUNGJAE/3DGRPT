@@ -897,9 +897,12 @@ class Playground:
             psim.PopItemWidth()
 
             psim.PushItemWidth(350)
-            changed, values = psim.InputFloat3(
+            changed, values = psim.SliderFloat3(
                 "Translate",
-                [object_transform.tx, object_transform.ty, object_transform.tz]
+                 [object_transform.tx, object_transform.ty, object_transform.tz],
+                v_min=-10.0, v_max=10.0,
+                format="%.3f",
+                power=1.0
             )
             if changed:
                 object_transform.tx = values[0]
@@ -995,50 +998,54 @@ class Playground:
         psim.SetNextItemOpen(True, psim.ImGuiCond_FirstUseEver)
         if psim.TreeNode("Global Param"):
             psim.PushItemWidth(350)
-
+            global_param_changed = False
             # LIGHT_CORNER
             changed, values = psim.SliderFloat3(
                 "Light Corner",
                 global_param[0].tolist(),
-                v_min=-20.0, v_max=20.0,
+                v_min=-10.0, v_max=10.0,
                 format="%.3f",
-                power=1.0
+                power=0.5
             )
             if changed:
+                global_param_changed = True
                 global_param[0] = torch.tensor(values, dtype=torch.float32)
 
             # LIGHT_V1
             changed, values = psim.SliderFloat3(
                 "Light V1",
                 global_param[1].tolist(),
-                v_min=-10.0, v_max=10.0,
+                v_min=0.0, v_max=5.0,
                 format="%.3f",
                 power=1.0
             )
             if changed:
+                global_param_changed = True
                 global_param[1] = torch.tensor(values, dtype=torch.float32)
 
             # LIGHT_V2
             changed, values = psim.SliderFloat3(
                 "Light V2",
                 global_param[2].tolist(),
-                v_min=-10.0, v_max=10.0,
+                v_min=-5.0, v_max=0.0,
                 format="%.3f",
                 power=1.0
             )
             if changed:
+                global_param_changed = True
                 global_param[2] = torch.tensor(values, dtype=torch.float32)
 
-            # LIGHT_NORMAL
-            changed, values = psim.SliderFloat3(
-                "Light Normal",
-                global_param[3].tolist(),
-                v_min=-1.0, v_max=1.0,
-                format="%.3f",
-                power=1.0
-            )
-            if changed:
-                global_param[3] = torch.tensor(values, dtype=torch.float32)
+            # # LIGHT_NORMAL
+            # changed, values = psim.SliderFloat3(
+            #     "Light Normal",
+            #     global_param[3].tolist(),
+            #     v_min=-1.0, v_max=1.0,
+            #     format="%.3f",
+            #     power=1.0
+            # )
+            # if changed:
+            #     global_param_changed = True
+            #     global_param[3] = torch.tensor(values, dtype=torch.float32)
 
             # # LIGHT_EMISSION
             # changed, values = psim.SliderFloat3(
@@ -1049,18 +1056,34 @@ class Playground:
             #     power=1.0
             # )
             # if changed:
+                #global_param_changed = True
             #     global_param[4] = torch.tensor(values, dtype=torch.float32)
 
             # Custom Float3
             changed, values = psim.InputFloat3(
-                "Custom Float3",
+                "Custom Float3 #1",
                 global_param[4].tolist(),
                 format="%.1f"
             )
             if changed:
+                global_param_changed = True
                 global_param[4] = torch.tensor(values, dtype=torch.float32)
 
+            # OnOff Float3
+            changed, values = psim.InputFloat3(
+                "Custom Float3 #2",
+                global_param[5].tolist(),
+                format="%.1f"
+            )
+            if changed:
+                global_param_changed = True
+                global_param[5] = torch.tensor(values, dtype=torch.float32)
+
             psim.PopItemWidth()
+
+            if global_param_changed:
+                self.is_force_canvas_dirty = True
+                
     def _draw_gaussian_widget(self):
         psim.SetNextItemOpen(True, psim.ImGuiCond_FirstUseEver)
         if (psim.TreeNode("Gaussians")):

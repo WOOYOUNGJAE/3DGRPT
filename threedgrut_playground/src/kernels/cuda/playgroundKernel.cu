@@ -228,7 +228,7 @@ static __device__ __inline__ void handleGlass(const float3 ray_d, float3 normal,
 static __device__ __inline__ void handleDiffuse(const float3 ray_o, const float3 ray_d, float3 normal,
     float& hit_t, unsigned int& nextRenderPass, HybridRayPayload* payload)
 {
-    float gaussianClosestHit_t = -1.f;
+    float gaussianClosestHit_t = TRACE_MAX;
     
     // Accumulate all gaussian particles up to intersection with mesh surface first
     const float4 volumetricRadDns = traceGaussians_outDist<HybridRayPayload>(*(payload->rayData), ray_o, ray_d, 1e-9, hit_t, payload, gaussianClosestHit_t/*out*/);
@@ -237,11 +237,7 @@ static __device__ __inline__ void handleDiffuse(const float3 ray_o, const float3
     
 #if USE_SHADOW
 
-    unsigned int meshIsCloser = hit_t < gaussianClosestHit_t;
-    if (payload->rayData->hitCount == 0.f)
-        meshIsCloser = true;
-
-
+    unsigned int meshIsCloser = (hit_t < gaussianClosestHit_t) | (payload->rayData->hitCount == 0.f/*Miss Gaussian*/);
     // float3 gaussian_normal = payload.rayData->normal;
 
     float3 ray_hitPos;
@@ -253,14 +249,13 @@ static __device__ __inline__ void handleDiffuse(const float3 ray_o, const float3
     }
     else // Gaussian is Closer
     {
-        ray_hitPos = ray_o + (gaussianClosestHit_t) * safe_normalize(ray_d);
+        ray_hitPos = ray_o + (gaussianClosestHit_t) * (ray_d);
         // occlusion_ray_o = ray_hitPos + L * EPS_SHIFT_GS;//TRACE_MESH_TMIN;// * TRACE_MESH_TMIN;
     }
 
     float3 L = LIGHT_POS - ray_hitPos;
     float occlusionRayMax = length(L);
     L = safe_normalize(L);
-    unsigned int is_occluded;
     if (meshIsCloser) // TODO: too many "if"
     {
         occlusion_ray_o = ray_hitPos + normal * TRACE_MESH_TMIN;
@@ -269,7 +264,7 @@ static __device__ __inline__ void handleDiffuse(const float3 ray_o, const float3
     {
         occlusion_ray_o = ray_hitPos + L * EPS_SHIFT_GS;//TRACE_MESH_TMIN;// * TRACE_MESH_TMIN;
     }
-    is_occluded = traceOcclusion(occlusion_ray_o, L, occlusionRayMax);
+    unsigned int is_occluded = traceOcclusion(occlusion_ray_o, L, occlusionRayMax);
     const float3 mesh_diffuse = get_diffuse_color(ray_d, normal);
     // const float surfaceAlpha = 1.0 - payload->accumulatedAlpha;   
 

@@ -286,7 +286,7 @@ void HybridOptixTracer::syncGlobalVariables(PlaygroundPipelineParameters &params
     params.lightNormal = make_float3(paramData[3][0].item<float>(), paramData[3][1].item<float>(), paramData[3][2].item<float>());
     // params.lightEmission = make_float3(paramData[4][0].item<float>(), paramData[4][1].item<float>(), paramData[4][2].item<float>());
     params.customFloat3 = make_float3(paramData[4][0].item<float>(), paramData[4][1].item<float>(), paramData[4][2].item<float>());
-    
+    params.onOffFloat3 = make_float3(paramData[5][0].item<float>(), paramData[5][1].item<float>(), paramData[5][2].item<float>());
 }
 
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor> HybridOptixTracer::traceHybrid(
