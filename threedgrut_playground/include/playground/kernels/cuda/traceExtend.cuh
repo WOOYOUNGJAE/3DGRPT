@@ -105,7 +105,11 @@ static __device__ __inline__ float traceVolumetricGS_outDist(
     return outDistance;
 }
 
-
+/**
+ * @tparam T payLoad type
+ * @param outClosestDistance out param of closest hit distance
+ * @return volumetric acculuated color
+ */
 template <typename T>
 static __device__ __forceinline__ float4 traceGaussians_outDist(
     RayData& rayData,

@@ -790,7 +790,6 @@ void OptixTracer::buildBVH(torch::Tensor mogPos,
     _state->gNum = gNum;
 
     cudaStream_t cudaStream = at::cuda::getCurrentCUDAStream();
-    std::cout << _state->gPrimType  << std::endl;
     // Create enclosing geometry primitives from 3d gaussians
     if (_state->gPrimType == MOGTracingCustom) {
         if (_state->gPrimAABBSz < sizeof(OptixAabb) * gNum) {

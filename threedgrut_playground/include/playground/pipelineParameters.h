@@ -85,6 +85,7 @@ struct PlaygroundPipelineParameters: PipelineParameters
     float3 lightV1;
     float3 lightV2;
     float3 lightNormal;
-    float3 customFloat3;
+    float3 customFloat3; // (LIGHT_EMISSION(x=y=z), pt depth, none)
+    float3 onOffFloat3; // (IsAreaLight, ColorBleedOnGaussian, None)
     // float3 lightEmission;
 };

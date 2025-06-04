@@ -65,7 +65,8 @@ class Tracer:
             [2.0, 0.0, 2.0],      # LIGHT_V2
             [0.0, 0.0, -1.0],     # LIGHT_NORMAL
             # [150.0, 150.0, 150.0], # LIGHT_EMISSION
-            [150.0, 3.0, 0.3] # Custom Float3 (LIGHT_EMISSION(x=y=z), pt depth, none)
+            [150.0, 2.0, 0.5], # Custom Float3 (LIGHT_EMISSION(x=y=z), pt depth, Primary ray power on Gaussian)
+            [0.0, 0.0, 0.0] # On Off Float3 (IsAreaLight, ColorBleedOnGaussian, None)
         ], dtype=torch.float32)
 
         if (is_path_tracing):

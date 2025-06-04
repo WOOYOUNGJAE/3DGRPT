@@ -187,7 +187,11 @@ extern "C" __global__ void __closesthit__ch()
     else // Gaussian is Closer
     {
         ray_hitPos = ray_o + gaussianClosestHit_t * ray_d;
-        hitNormal = (pPayload->rayData->normal);
+        hitNormal = safe_normalize(pPayload->rayData->normal);
+        if (length(hitNormal) == 0.f)
+        {
+            hitNormal = make_float3(0,0,1);
+        }
         hitRGB = volRadiance;
     }
 
@@ -220,15 +224,18 @@ extern "C" __global__ void __closesthit__ch()
 
 
     float3 L = curLightPos - ray_hitPos;
-    // L = params.lightCorner - ray_hitPos; // non-area light
+    if (params.onOffFloat3.x == 1.f) // area Light
+        L = curLightPos - ray_hitPos;
+    else if (params.onOffFloat3.x == 0.f)
+        L = params.lightCorner - ray_hitPos; // non-area light
+
     float occlusionRayMax = length(L);
     L = safe_normalize(L);
     const float nDl = dot( hitNormal, L );
     const float LnDl = 1.f; // TODO : -dot( light.normal, L );
     
     float weight = 0.0f;
-    // if (1) // ready to trace occlusion
-    if ((nDl > 0.f && LnDl > 0.f) || !meshIsCloser) // ready to trace occlusion
+    if ((!meshIsCloser) || (nDl > 0.f && LnDl > 0.f)) // ready to trace occlusion
     {
         // TRACE OCCLUSION
         // ray start pos
@@ -262,8 +269,13 @@ extern "C" __global__ void __closesthit__ch()
     if (pPayload->countEmitted && meshIsCloser == false)
     {
         if (weight != 0.f) weight = 1.f;
+        // if (weight > 0.f) weight = 1.f;
         pPayload->ptRadiance = make_float3(params.customFloat3.z) * weight;
-        pPayload->done = 1;
+
+        if (params.onOffFloat3.y == 1.f)  // Use Secondary ray on gaussian
+            pPayload->done = static_cast<unsigned int>((params.customFloat3.y - 1) == 0);
+        else if (params.onOffFloat3.y == 0.f) // Use only Primary ray on Gaussian
+            pPayload->done = 1;
     }
 
     pPayload->countEmitted = false;
