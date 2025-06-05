@@ -227,7 +227,7 @@ extern "C" __global__ void __closesthit__ch()
     if (params.onOffFloat3.x == 1.f) // area Light
         L = curLightPos - ray_hitPos;
     else if (params.onOffFloat3.x == 0.f)
-        L = params.lightCorner - ray_hitPos; // non-area light
+        L = (params.lightCorner + params.lightV1/2 + params.lightV2/2) - ray_hitPos; // non-area light
 
     float occlusionRayMax = length(L);
     L = safe_normalize(L);
