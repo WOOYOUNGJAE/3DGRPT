@@ -27,7 +27,7 @@ from threedgrut.gui.ps_extension import initialize_cugl_interop
 from threedgrut_playground.utils.video_out import VideoRecorder
 from threedgrut_playground.utils.kaolin_future.conversions import polyscope_from_kaolin_camera, polyscope_to_kaolin_camera
 from threedgrut_playground.engine import Engine3DGRUT, OptixPrimitiveTypes
-
+from threedgrut.utils.timer import CudaTimer
 
 #################################
 ##    --- Polyscope Gui ---    ##
@@ -69,6 +69,9 @@ class Playground:
         self.viz_render_enabled = True
 
         self.slice_planes = self.slice_plane_enabled = self.slice_plane_pos = self.slice_plane_normal = None
+
+        self.checking_fps = False
+        self.frame_timer = CudaTimer()
         self.init_polyscope(buffer_mode)
 
     def run(self):
@@ -154,7 +157,13 @@ class Playground:
 
         camera = polyscope_to_kaolin_camera(view_params, window_w, window_h, device=self.engine.device)
         is_first_pass = self.is_dirty(camera)
+        if self.checking_fps and self.frame_timer._recording == False: # Time Measuring
+            self.frame_timer.start()
         if not is_first_pass and not self.engine.has_progressive_effects_to_render():
+            if self.checking_fps and self.frame_timer._recording:
+                self.checking_fps = False
+                self.frame_timer.end()
+                print(str(self.frame_timer.timing()) + "(ms)")
             return self.engine.last_state['rgb'], self.engine.last_state['opacity']
 
         # Render a frame pass
@@ -568,7 +577,7 @@ class Playground:
 
             psim.SameLine()
             psim.PushItemWidth(75)
-            spp_min, spp_max = 1, 256
+            spp_min, spp_max = 1, 512
             if self.engine.antialiasing_mode == '4x MSAA':
                 spp_min, spp_max = 4, 4
             elif self.engine.antialiasing_mode == '8x MSAA':
@@ -1083,7 +1092,20 @@ class Playground:
 
             if global_param_changed:
                 self.is_force_canvas_dirty = True
+
+    def _draw_evaluation_widget(self):
+        psim.SetNextItemOpen(True, psim.ImGuiCond_FirstUseEver)
+        psim.BeginDisabled(self.checking_fps)
+        psim.PushItemWidth(100)  # button_width
+        if (psim.TreeNode("Evaluation")):
+            if psim.Button("Measure FPS"):
+                self.is_force_canvas_dirty = True
+                self.checking_fps = True
+        psim.PopItemWidth()
+        psim.EndDisabled()
+            
                 
+
     def _draw_gaussian_widget(self):
         psim.SetNextItemOpen(True, psim.ImGuiCond_FirstUseEver)
         if (psim.TreeNode("Gaussians")):
@@ -1108,7 +1130,7 @@ class Playground:
             changed, values = psim.SliderFloat3(
                 "Translate",
                 [gaussian_positions[0], gaussian_positions[1], gaussian_positions[2]],
-                v_min=-5.0, v_max=5.0,
+                v_min=-10.0, v_max=10.0,
                 format="%.4f",
                 power=1.0
             )
@@ -1176,6 +1198,8 @@ class Playground:
     @torch.cuda.nvtx.range("ps_ui_callback")
     def ps_ui_callback(self):
         """ Polyscope custom UI callback - used to draw gui menu"""
+        self._draw_evaluation_widget()
+        psim.Separator()
         self._draw_preset_settings_widget()
         psim.Separator()
         self._draw_render_widget()
