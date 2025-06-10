@@ -1,6 +1,6 @@
 method: 3dgrt # 3dgrt or 3dgut
   
-pipeline_type: reference
+pipeline_type: referenceSlang
 backward_pipeline_type: ${render.pipeline_type}Bwd
 particle_kernel_degree: 4
 particle_kernel_density_clamping: true
@@ -11,6 +11,6 @@ particle_radiance_sph_degree: 3
 primitive_type: icosahedron
 min_transmittance: 0.001
 max_consecutive_bvh_update: 15
-enable_normals: false
+enable_normals: true
 enable_hitcounts: true
 enable_kernel_timings: false
