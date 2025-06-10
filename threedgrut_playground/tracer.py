@@ -61,8 +61,8 @@ class Tracer:
 
         self.pipeline_global_param = torch.tensor([
             [-4.0, 2.245, 9.0],   # LIGHT_CORNER
-            [2.0, 0.0, 0.0],     # LIGHT_V1
-            [0.0, -2.0, 0.0],      # LIGHT_V2
+            [2.0, 0.0, -2.0],     # LIGHT_V1
+            [2.0, 0.0, 2.0],      # LIGHT_V2
             [0.0, 0.0, -1.0],     # LIGHT_NORMAL
             # [150.0, 150.0, 150.0], # LIGHT_EMISSION
             [150.0, 2.0, 0.5], # Custom Float3 (LIGHT_EMISSION(x=y=z), pt depth, Primary ray power on Gaussian)

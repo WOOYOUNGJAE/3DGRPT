@@ -68,14 +68,6 @@ extern "C" __global__ void __raygen__rg() {
         int depthLeft = static_cast<int>(params.customFloat3.y);
         float3 jitteredRayDir = rayDirectionFirst;
 
-        // const float2 subpixel_jitter = make_float2( rnd( seed )-0.5f, rnd( seed )-0.5f );
-        // const float2 d = 2.0f * make_float2(
-        //     ( static_cast<float>( idx.x ) + subpixel_jitter.x ) / static_cast<float>( width ), //width
-        //     ( static_cast<float>( idx.y ) + subpixel_jitter.y ) / static_cast<float>( height ) // height
-        //     ) - 1.0f;     
-        //     jitteredRayDir = safe_normalize(rayDirectionFirst 
-        //     + d.x * U
-        //     + d.y * V);
         payload.rayDir = jitteredRayDir;
 
         float3 rayOrigin;
